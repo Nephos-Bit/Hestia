@@ -118,6 +118,9 @@ namespace WinterMarket
 
         private void BuildStall(string objectName, Vector3 position, VoxelMaterialSlot roof, bool bakery)
         {
+            // The snow plane ends at y=0.30. Lift the complete booth above it so the wooden
+            // floor never shares a depth plane with snow in the open service area.
+            Vector3 raisedPosition = position + Vector3.up * 0.315f;
             var volume = new VoxelVolume(new Vector3Int(29, 28, 19));
             placementGrid.ReserveObject(objectName, position, volume.Width, volume.Depth);
             var snowCap = new VoxelVolume(new Vector3Int(29, 28, 19));
@@ -185,11 +188,11 @@ namespace WinterMarket
             glow.FillCuboid(7, 12, 13, 2, 1, 1, VoxelMaterialSlot.Slot6);
             glow.FillCuboid(19, 12, 13, 2, 1, 1, VoxelMaterialSlot.Slot6);
 
-            VoxelAssetGenerator asset = CreateAsset(objectName, volume, position, true);
-            CreateSnowCap(objectName + " Dachschnee", snowCap, position);
-            VoxelAssetGenerator glowAsset = CreateAsset(objectName + " Fensterlicht", glow, position, true);
+            VoxelAssetGenerator asset = CreateAsset(objectName, volume, raisedPosition, true);
+            CreateSnowCap(objectName + " Dachschnee", snowCap, raisedPosition);
+            VoxelAssetGenerator glowAsset = CreateAsset(objectName + " Fensterlicht", glow, raisedPosition, true);
             warmRenderers.Add(glowAsset.GetComponent<Renderer>());
-            Vector3 lightPosition = position + new Vector3(0f, 1.85f, -0.45f);
+            Vector3 lightPosition = raisedPosition + new Vector3(0f, 1.85f, -0.45f);
             warmLights.Add(CreateWarmLight(objectName + " Innenlicht", lightPosition, 3.8f, 1.55f));
 
             var sign = new VoxelVolume(new Vector3Int(13, 6, 2));
@@ -199,7 +202,7 @@ namespace WinterMarket
             VoxelAssetGenerator signAsset = CreateAsset(
                 objectName + " Schild",
                 sign,
-                position + new Vector3(0f, 2.8f, -1.45f),
+                raisedPosition + new Vector3(0f, 2.8f, -1.45f),
                 true);
         }
 
