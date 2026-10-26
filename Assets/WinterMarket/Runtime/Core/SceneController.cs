@@ -76,6 +76,7 @@ namespace WinterMarket
             BuildSnowMounds();
 
             BuildCamera();
+            BuildBoundaryFirs();
             BuildSystems();
         }
 
@@ -85,11 +86,28 @@ namespace WinterMarket
             ground.SetVoxel(0, 0, 0, VoxelMaterialSlot.Slot0);
             VoxelAssetGenerator groundAsset =
                 VoxelAssetGenerator.Create("Endlose Schneefläche", ground, palette, worldRoot, true);
-            groundAsset.transform.position = new Vector3(-40f, 0f, -40f);
-            groundAsset.transform.localScale = new Vector3(534f, 2f, 534f);
+            groundAsset.transform.position = new Vector3(-75f, 0f, -75f);
+            groundAsset.transform.localScale = new Vector3(1000f, 2f, 1000f);
             var groundRenderer = groundAsset.GetComponent<MeshRenderer>();
             groundRenderer.shadowCastingMode = ShadowCastingMode.Off;
             groundRenderer.receiveShadows = true;
+
+            // With the original camera angle, the lowest orthographic rays pass below the
+            // visible snow plane. This lower, same-colour underlay closes that gap without
+            // changing camera position or rotation.
+            var underlay = new VoxelVolume(Vector3Int.one);
+            underlay.SetVoxel(0, 0, 0, VoxelMaterialSlot.Slot0);
+            VoxelAssetGenerator underlayAsset = VoxelAssetGenerator.Create(
+                "Schneeunterlage unter Kamerarand",
+                underlay,
+                palette,
+                worldRoot,
+                true);
+            underlayAsset.transform.position = new Vector3(-300f, -15f, -300f);
+            underlayAsset.transform.localScale = new Vector3(4000f, 2f, 4000f);
+            MeshRenderer underlayRenderer = underlayAsset.GetComponent<MeshRenderer>();
+            underlayRenderer.shadowCastingMode = ShadowCastingMode.Off;
+            underlayRenderer.receiveShadows = false;
 
             const int pathWidth = 13;
             Vector3 pathCenter = new Vector3(0f, 0.305f, -2.675f);
@@ -338,6 +356,111 @@ namespace WinterMarket
             CreateMound("Schneekante vorne", new Vector3(0.2f, 0.31f, -4.35f), 42, 4, 7);
         }
 
+        private void BuildBoundaryFirs()
+        {
+            BuildEnclosingForest();
+        }
+
+        private void BuildEnclosingForest()
+        {
+            const int candidateCount = 260;
+            const int targetTreeCount = 62;
+            int placed = 0;
+            uint state = 0x91e10da5u;
+
+            for (int i = 0; i < candidateCount && placed < targetTreeCount; i++)
+            {
+                float x = Mathf.Lerp(-13f, 13f, NextForestRandom(ref state));
+                float z = Mathf.Lerp(-8.5f, 9f, NextForestRandom(ref state));
+                float normalizedX = x / 7.4f;
+                float normalizedZ = (z - 0.4f) / 5.1f;
+                if (normalizedX * normalizedX + normalizedZ * normalizedZ < 1f)
+                {
+                    continue;
+                }
+
+                Vector3 position = new Vector3(x, 0f, z);
+                bool foreground = z < -3.25f;
+                Transform tree = BuildBoundaryFir(
+                    $"Waldgürtel {i + 1}",
+                    position,
+                    foreground,
+                    i,
+                    true);
+                if (tree != null)
+                {
+                    placed++;
+                }
+            }
+        }
+
+        private static float NextForestRandom(ref uint state)
+        {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            return (state & 0x00ffffffu) * (1f / 16777216f);
+        }
+
+        private Transform BuildBoundaryFir(
+            string objectName,
+            Vector3 position,
+            bool foreground,
+            int variation = 0,
+            bool skipIfBlocked = false,
+            bool tallBoundaryTree = false)
+        {
+            int baseRadius = tallBoundaryTree ? 5 : foreground ? 4 : 5;
+            int radius = tallBoundaryTree ? 5 : Mathf.Clamp(baseRadius + variation % 3 - 1, 3, 5);
+            int height = tallBoundaryTree ? 31 + variation % 5 : foreground ? 12 + variation % 3 : 17 + variation % 4;
+            int tiers = tallBoundaryTree ? 9 : foreground ? 3 : 4 + variation % 2;
+            int width = radius * 2 + 1;
+            var tree = new VoxelVolume(new Vector3Int(width, height, width));
+            if (skipIfBlocked)
+            {
+                if (!placementGrid.TryReserveObject(objectName, position, tree.Width, tree.Depth))
+                {
+                    return null;
+                }
+            }
+            else
+            {
+                placementGrid.ReserveObject(objectName, position, tree.Width, tree.Depth);
+            }
+
+            int center = radius;
+            tree.FillCuboid(center - 1, 0, center - 1, 3, 6, 3, VoxelMaterialSlot.Slot3);
+            for (int tier = 0; tier < tiers; tier++)
+            {
+                int tierRadius = Mathf.Max(1, radius - tier);
+                int size = tierRadius * 2 + 1;
+                int y = 4 + tier * 3;
+                int offsetX = tier == 0 ? 0 : ((variation + tier * 5) % 3) - 1;
+                int offsetZ = tier == 0 ? 0 : ((variation + tier * 7) % 3) - 1;
+                VoxelMaterialSlot foliage = (variation + tier) % 3 == 0
+                    ? VoxelMaterialSlot.Slot15
+                    : VoxelMaterialSlot.Slot5;
+                tree.FillCuboid(
+                    center - tierRadius + offsetX,
+                    y,
+                    center - tierRadius + offsetZ,
+                    size,
+                    2,
+                    size,
+                    foliage);
+                tree.FillCuboid(
+                    center - tierRadius + offsetX,
+                    y + 2,
+                    center - tierRadius + offsetZ + 1,
+                    size,
+                    1,
+                    Mathf.Max(1, size - 2),
+                    VoxelMaterialSlot.Slot0);
+            }
+
+            return CreateAsset(objectName, tree, position, true).transform;
+        }
+
         private void CreateMound(string objectName, Vector3 position, int width, int height, int depth)
         {
             var mound = new VoxelVolume(new Vector3Int(width, height, depth));
@@ -359,8 +482,9 @@ namespace WinterMarket
         {
             var cameraObject = new GameObject("Diorama Camera");
             cameraObject.transform.SetParent(transform, false);
+            Vector3 focusPoint = new Vector3(0f, 1.18f, -0.15f);
             cameraObject.transform.position = new Vector3(9.7f, 8.9f, -9.7f);
-            cameraObject.transform.LookAt(new Vector3(0f, 1.18f, -0.15f));
+            cameraObject.transform.LookAt(focusPoint);
 
             DioramaCamera = cameraObject.AddComponent<Camera>();
             DioramaCamera.orthographic = true;
@@ -560,6 +684,7 @@ namespace WinterMarket
             DestroyOwnedComponent<QualityController>();
             DestroyOwnedComponent<PathSystem>();
             DestroyOwnedComponent<AmbientController>();
+            DestroyOwnedComponent<DioramaBoundaryForest>();
             DestroyOwnedComponent<DioramaUIController>();
             DestroyOwnedComponent<FrameDiagnostics>();
 
@@ -632,22 +757,34 @@ namespace WinterMarket
             int depthCells,
             bool mayStandOnWalkway = false)
         {
+            if (!TryReserveObject(objectName, center, widthCells, depthCells, mayStandOnWalkway))
+            {
+                throw new InvalidOperationException(
+                    $"Object '{objectName}' overlaps an occupied grid footprint or cleared walkway.");
+            }
+        }
+
+        public bool TryReserveObject(
+            string objectName,
+            Vector3 center,
+            int widthCells,
+            int depthCells,
+            bool mayStandOnWalkway = false)
+        {
             foreach (Vector2Int cell in EnumerateFootprint(center, widthCells, depthCells))
             {
-                if (objectCells.TryGetValue(cell, out string blockingObject))
+                if (objectCells.ContainsKey(cell) || (!mayStandOnWalkway && walkwayCells.Contains(cell)))
                 {
-                    throw new InvalidOperationException(
-                        $"Object '{objectName}' overlaps object '{blockingObject}' at {cell}.");
+                    return false;
                 }
+            }
 
-                if (!mayStandOnWalkway && walkwayCells.Contains(cell))
-                {
-                    throw new InvalidOperationException(
-                        $"Object '{objectName}' occupies the cleared walkway at {cell}.");
-                }
-
+            foreach (Vector2Int cell in EnumerateFootprint(center, widthCells, depthCells))
+            {
                 objectCells.Add(cell, objectName);
             }
+
+            return true;
         }
 
         private IEnumerable<Vector2Int> EnumerateFootprint(Vector3 center, int widthCells, int depthCells)
@@ -665,6 +802,117 @@ namespace WinterMarket
                     yield return new Vector2Int(x, z);
                 }
             }
+        }
+    }
+
+    [DisallowMultipleComponent]
+    internal sealed class DioramaBoundaryForest : MonoBehaviour
+    {
+        private Camera dioramaCamera;
+        private Transform[] rearTrees = Array.Empty<Transform>();
+        private Transform[] foregroundTrees = Array.Empty<Transform>();
+        private int lastWidth;
+        private int lastHeight;
+        private float lastOrthographicSize;
+
+        public void Configure(Camera camera, Transform[] rear, Transform[] foreground)
+        {
+            dioramaCamera = camera;
+            rearTrees = rear ?? Array.Empty<Transform>();
+            foregroundTrees = foreground ?? Array.Empty<Transform>();
+            ApplyLayout();
+        }
+
+        private void LateUpdate()
+        {
+            if (dioramaCamera == null)
+            {
+                return;
+            }
+
+            if (lastWidth != Screen.width || lastHeight != Screen.height ||
+                !Mathf.Approximately(lastOrthographicSize, dioramaCamera.orthographicSize))
+            {
+                ApplyLayout();
+            }
+        }
+
+        public static Vector3[] CalculateRow(Camera camera, int count, bool rear)
+        {
+            int safeCount = Mathf.Max(1, count);
+            var positions = new Vector3[safeCount];
+            if (camera == null)
+            {
+                return positions;
+            }
+
+            float lowestGroundViewport = FindLowestGroundViewport(camera);
+            Vector3 topCenter = GetGroundPoint(camera, 0.5f, 1f);
+            Vector3 bottomCenter = GetGroundPoint(camera, 0.5f, lowestGroundViewport);
+            Vector3 outward = rear ? topCenter - bottomCenter : bottomCenter - topCenter;
+            outward.y = 0f;
+            outward = outward.sqrMagnitude > 0.001f ? outward.normalized : Vector3.forward;
+            // Rear roots sit high in the view and use tall trees whose crowns continue to the
+            // top edge. Front roots sit directly at the lower edge, leaving the path visible.
+            float viewportY = rear ? 0.82f : lowestGroundViewport;
+            float outsideMargin = rear ? 0.2f : 0f;
+
+            for (int i = 0; i < safeCount; i++)
+            {
+                float interpolation = safeCount == 1 ? 0.5f : i / (float)(safeCount - 1);
+                // The endpoints extend beyond the visible width, covering wide landscape
+                // previews as well as narrow phone displays.
+                float viewportX = Mathf.Lerp(-0.12f, 1.12f, interpolation);
+                positions[i] = GetGroundPoint(camera, viewportX, viewportY) + outward * outsideMargin;
+                positions[i].y = 0f;
+            }
+
+            return positions;
+        }
+
+        private void ApplyLayout()
+        {
+            ApplyRow(rearTrees, CalculateRow(dioramaCamera, rearTrees.Length, true));
+            ApplyRow(foregroundTrees, CalculateRow(dioramaCamera, foregroundTrees.Length, false));
+            lastWidth = Screen.width;
+            lastHeight = Screen.height;
+            lastOrthographicSize = dioramaCamera != null ? dioramaCamera.orthographicSize : 0f;
+        }
+
+        private static void ApplyRow(Transform[] trees, Vector3[] positions)
+        {
+            int count = Mathf.Min(trees != null ? trees.Length : 0, positions != null ? positions.Length : 0);
+            for (int i = 0; i < count; i++)
+            {
+                if (trees[i] != null)
+                {
+                    trees[i].position = positions[i];
+                }
+            }
+        }
+
+        private static Vector3 GetGroundPoint(Camera camera, float viewportX, float viewportY)
+        {
+            Ray ray = camera.ViewportPointToRay(new Vector3(viewportX, viewportY, 0f));
+            var ground = new Plane(Vector3.up, Vector3.zero);
+            return ground.Raycast(ray, out float distance) ? ray.GetPoint(distance) : Vector3.zero;
+        }
+
+        private static float FindLowestGroundViewport(Camera camera)
+        {
+            const int samples = 48;
+            var ground = new Plane(Vector3.up, Vector3.zero);
+            for (int i = 0; i <= samples; i++)
+            {
+                float viewportY = i / (float)samples;
+                Ray ray = camera.ViewportPointToRay(new Vector3(0.5f, viewportY, 0f));
+                if (ground.Raycast(ray, out _))
+                {
+                    return viewportY;
+                }
+            }
+
+            return 0.2f;
         }
     }
 }

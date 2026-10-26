@@ -220,6 +220,13 @@ namespace WinterMarket
             Color background = SanitizeAtmosphereColor(
                 Color.Lerp(from.backgroundColor, to.backgroundColor, interpolation),
                 WinterPalette.Background);
+            // The original fixed camera intentionally sees beyond the horizontal ground plane
+            // at its lower edge. In daylight the clear colour must match snow so that this
+            // transition reads as continuous terrain instead of as a hard world boundary.
+            float daylightBackdrop = Mathf.InverseLerp(0.24f, 0.85f, directionalLight != null
+                ? directionalLight.intensity
+                : 0.85f);
+            background = Color.Lerp(background, WinterPalette.Snow, daylightBackdrop);
             Color fog = SanitizeAtmosphereColor(
                 Color.Lerp(from.fogColor, to.fogColor, interpolation),
                 background);
