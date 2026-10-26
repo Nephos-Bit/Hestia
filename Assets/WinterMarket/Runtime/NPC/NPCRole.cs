@@ -6,6 +6,7 @@ namespace WinterMarket
         Visitor,
         StallOperator,
         Supplier,
-        Cleaner
+        Cleaner,
+        Child
     }
 }

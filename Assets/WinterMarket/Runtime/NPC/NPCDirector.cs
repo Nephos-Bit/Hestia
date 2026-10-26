@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace WinterMarket
@@ -75,6 +76,12 @@ namespace WinterMarket
 
             float hour = ReadCurrentHour();
             bool deepNight = IsDeepNight(hour);
+            if (TryStartEncounter())
+            {
+                nextActivityAt = Time.time + RandomRange(7f, 17f);
+                return;
+            }
+
             NPCBehaviour npc = FindInactiveNPC();
             if (npc == null)
             {
@@ -203,6 +210,15 @@ namespace WinterMarket
             float stagger = RandomRange(0.25f, 3.5f);
             npc.Activate(role, pathSystem, spawnPosition, speed, stagger, NextUInt());
             npc.BeginActivity(activity, route);
+
+            if ((role == NPCRole.Visitor || role == NPCRole.Passerby) && Random01() < 0.24f)
+            {
+                NPCBehaviour child = FindInactiveNPC();
+                if (child != null)
+                {
+                    child.ActivateChild(npc, pathSystem, RandomRange(0.1f, 0.8f), NextUInt());
+                }
+            }
         }
 
         private string ResolveRoute(NPCRole role, NPCState activity, string preferred)
@@ -238,6 +254,40 @@ namespace WinterMarket
             }
 
             return null;
+        }
+
+        private bool TryStartEncounter()
+        {
+            if (Random01() > 0.12f)
+            {
+                return false;
+            }
+
+            IReadOnlyList<NPCBehaviour> active = NPCBehaviour.ActiveInstances;
+            for (int i = 0; i < active.Count; i++)
+            {
+                NPCBehaviour first = active[i];
+                if (first == null || first.State != NPCState.Waiting && first.State != NPCState.Observing)
+                {
+                    continue;
+                }
+
+                for (int j = i + 1; j < active.Count; j++)
+                {
+                    NPCBehaviour second = active[j];
+                    if (second == null || second.State != NPCState.Waiting && second.State != NPCState.Observing)
+                    {
+                        continue;
+                    }
+
+                    if (first.BeginBriefEncounter(second, RandomRange(2.5f, 5.5f)))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
         }
 
         private NPCRole ChooseRole(float hour, bool deepNight)

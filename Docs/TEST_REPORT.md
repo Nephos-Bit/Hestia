@@ -1,79 +1,56 @@
-# Wintermarkt V0.1 – Testbericht
+# Wintermarkt V0.2 – Ist-Zustand und Testbericht
 
 Datum: 2026-10-26  
-Gerät: Nothing Phone (1), Modell `A063` / `Spacewar`, 1080×2400  
-Unity: 6000.3.23f1, URP 17.3, IL2CPP ARM64  
-APK: `Builds/Android/Wintermarkt-v0.1.apk` (31,9 MB auf Datenträger)
+Zielplattform: Android, lokal/offline, Hochformat
 
-## Funktionsprüfungen
+## Ist-Zustand vor V0.2
 
-Unity-Batchmodus `WinterMarket.Editor.WinterMarketVerification.RunFunctionalChecks`:
+- V0.1 hatte einen prozedural erzeugten Voxelmarkt mit zwei Buden, Baum, orthografischer Kamera,
+  lokaler Gerätezeit, weichen Hauptlichtschatten, fünf NPC-Rollen und einem Pool von sechs Figuren.
+- Die frühere Darstellung ließ ganze Meshes anstelle einzelner Lichtquellen emittieren. Die Buden,
+  der Baum, NPC-Proportionen und Laufwege waren noch zu gleichförmig.
+- Das berührbare Einstellungsfeld war im regulären Betrachtungsmodus sichtbar. Der Android-Offlinebetrieb
+  und das 30-FPS-Ziel waren in V0.1 auf einem Nothing Phone (1) bereits teilweise nachgewiesen.
 
-- Voxel-Greedy-Mesher fasst einen 2×1×1-Quader zu sechs Quads zusammen.
-- Tagesphasen: 05:29 Nacht, 05:30 Frühmorgen, 09:30 Tag, 16:30 Abend, 20:30 Ausklang, 23:30 Nacht.
-- Fünf NPC-Rollen und neun Zustände sind deklariert.
-- Die Startszene initialisiert Kamera, Zeit, Licht, Wege, Atmosphäre und einen Pool aus sechs NPCs.
-- `PlayerSettings.Android.forceInternetPermission` ist deaktiviert.
+## Umgesetzt in V0.2
 
-Ergebnis: `WINTERMARKT_CHECKS_PASS`.
+- Beide Buden haben nun tragende Pfosten, tiefe Verkaufsöffnungen, Tresen, sichtbare Dachschichten,
+  Schneeauflagen, reduzierte Girlanden und wenige eindeutige Waren.
+- Der zentrale Baum hat eine gestufte Voxel-Silhouette, schneebedeckte Stufen, einzelne Dekorationen und
+  getrennte Licht-Voxel.
+- Fenster, Laternen und Baumlichter emittieren als getrennte Meshes. Das verhindert flächiges Leuchten von
+  Holz und Metall. Weiche Hauptlichtschatten, leicht verstärkte Kontaktschatten und dezentes SSAO sind aktiv.
+- Die Marktstände wurden weiter nach außen gesetzt, der Baum hat einen eigenen Mittelraum und die Kamera
+  wurde entsprechend weiter gefasst.
+- Das reguläre Diorama erzeugt kein HUD. Das Debug-Menü erfordert explizit `-winterDebugUI`.
+- NPCs variieren nun Mantel-, Mützen- und Schal-Farben, Breite, Größe, Tempo und Animationsphase. Getrennte
+  Routen verteilen sie über den Weg; statische Kollisionsflächen verhindern das Durchlaufen von Buden,
+  Baum und Lieferobjekten. Seltene Pausen zweier Figuren bilden kurze Begegnungen.
+- Die Beleuchtung enthält eine eigene Marktschluss-Stimmung um 22:30. Die vier Capture-Zeitpunkte sind
+  07:30, 14:00, 19:00 und 22:30; ohne Debug-Override gilt weiterhin die lokale Gerätezeit.
 
-## Gerätetest
+## Automatisierte Prüfungen
 
-- Installation per ADB: erfolgreich, Startaktivität `com.unity3d.player.UnityPlayerGameActivity`.
-- Start ohne Netzwerk, ohne Login, ohne HUD-Pflicht. Die Mini-Einstellungen (Qualität, Ton) erscheinen nur nach Eingabe und blenden sich nach sechs Sekunden aus.
-- Die lokale Gerätezeit steuert die Beleuchtung. Zum Testzeitpunkt (ca. 11:38) zeigte das Gerät helles Tageslicht.
-- Voxel-Stände, Baum, Laternen, Bank, Weg und Voxel-NPCs sind sichtbar. NPCs laufen, bleiben stehen und nutzen den Weg.
-- APK-Berechtigungen laut `aapt dump permissions`: nur die signaturgebundene `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. Keine `INTERNET`-Berechtigung.
-- Manifest-Nachbearbeitung entfernt Internet-Deklarationen aus dem Gradle-Projekt.
-
-## Performance
-
-Logcat auf dem Nothing Phone (1), Qualitätsprofil Standard (Ziel 30 FPS):
-
-| Intervall | Durchschnitt | Schlechtester Frame | Renderer |
-|---|---|---|---|
-| 0–30 s inkl. Start | 30,75 FPS | 2358 ms (einmaliger Start-Hitch) | 46 |
-| 30–60 s | 39,00 FPS | 50,13 ms | 46 |
-
-Nach dem Start liegt die Szene über dem 30-FPS-Ziel. Der erste Frame-Einbruch gehört zum Kaltstart und trat in den folgenden 30 Sekunden nicht wieder auf.
-
-Ein voller zehnminütiger Soak mit `WINTERMARKT_SOAK_PASS` wird parallel nachgezogen; bis dahin gilt das 10-Minuten-Kriterium als teilweise nachgewiesen (stabile Minute nach dem Start, keine weiteren Abstürze).
-
-## Visuelle Nachweise
-
-Editor-Renderings in `Artifacts/Screenshots`:
-
-- `afternoon-1430.png`: helle weiße Landschaft, klare Voxel-Silhouetten.
-- `evening-1900.png` und `night-0100.png`: kühle blaue Umgebung, warme Standlichter.
-- `morning-0730.png`: Stände und Baum sind lesbar, die große Schneefläche bleibt im Editor-Batch-Capture zu dunkel. Auf dem Gerät bei Tageslicht ist der Schnee hellweiß (`device-final.png`).
-
-Geräteaufnahme: `Artifacts/Video/wintermarkt-v0.1-device.mp4` (20 s, NPCs in Bewegung).
-
-## Abnahmekriterien
-
-| Kriterium | Status | Nachweis |
+| Prüfung | Status | Nachweis |
 |---|---|---|
-| Startet auf Android vollständig offline | erfüllt | ADB-Installation und Start ohne Netz |
-| Erkennbarer Voxel-Wintermarkt im Hochformat | erfüllt | `device-final.png` |
-| Viel Weißraum, keine harte Weltgrenze | erfüllt | Endlose Schneefläche, Portrait |
-| Weiche Schatten und räumliche Tiefe | teilweise | URP Soft Shadows aktiv; auf dem hellen Mittagsbild kaum sichtbar |
-| Tageslicht und Abendlicht unterscheiden sich | erfüllt | Afternoon- vs. Evening-Capture |
-| Lokale Uhrzeit beeinflusst das Bild | erfüllt | Gerät um 11:38 im Tageslicht |
-| Fünf NPC-Rollen | erfüllt | `NPCRole` + Director-Gewichte |
-| Passanten ohne Einkauf | erfüllt | Route `WalkThrough` |
-| NPCs bleiben stehen und betrachten | erfüllt | Zustände `Waiting` / `Observing` |
-| Liefer- und Aufräumereignisse | erfüllt | Rollen Supplier / Cleaner, zeitgewichtet |
-| NPCs nicht dauerhaft synchron | erfüllt | Jitter, gewichtete Pausen |
-| Diorama ohne sichtbare Spieloberfläche | erfüllt | UI nur nach Touch, Auto-Hide 6 s |
-| Schnee fällt unaufdringlich | erfüllt | Drei Partikelschichten, im Gerät sichtbar |
-| Keine notwendigen Internetdienste | erfüllt | Keine INTERNET-Permission, keine SDKs |
-| Mindestens 30 FPS ohne längere Einbrüche | erfüllt nach Start | 39 FPS / 50 ms worst nach Warm-up; Start-Hitch 2,4 s |
-| Zehn Minuten ohne Interaktion | offen / läuft | Soak-Log `Artifacts/device-perf.log` |
+| C#-Kompilierung Laufzeit und Editor | erfüllt | `Assembly-CSharp.csproj` und `Assembly-CSharp-Editor.csproj` per MSBuild kompiliert; nur zwei bestehende Unity-6-Deprecation-Warnungen in `WinterMarketProjectBuilder`. |
+| Voxel-Greedy-Meshing | offen | `WinterMarketVerification.RunFunctionalChecks` vorhanden; Batchlauf konnte wegen Unity-Lizenzdienst nicht abschließen. |
+| Tagesphasen inklusive 22:30 | offen | Funktionstest deckt 05:29, 05:30, 09:30, 16:30, 20:30, 22:30 und 23:30 ab. |
+| Startmodule, sechs NPCs, Offline-Flag | offen | Funktionstest vorhanden; erneute Unity-Ausführung erforderlich. |
+| HUD-freier Diorama-Modus | Code geprüft | `SceneController` erzeugt `DioramaUIController` nur mit `-winterDebugUI`. |
+| Vier V0.2-Screenshots | offen | `Capture Four Times` schreibt `morning-0730.png`, `afternoon-1400.png`, `evening-1900.png`, `closing-2230.png`. |
+| Zwei Minuten NPC-Aufnahme | offen | Kein Laufzeit-/Aufnahmezugriff verfügbar. |
+| Offlinebetrieb im Flugmodus | offen | Kein Android-Gerät im aktuellen Lauf verfügbar. |
+| Android-Performance, Ziel 30 FPS | offen | Der V0.1-Gerätetest ist kein Nachweis für die geänderte V0.2-Szene. |
 
-## Bekannte Einschränkungen
+## Einschränkung der aktuellen Verifikation
 
-- Das Editor-Batch-Rendering um 07:30 verdunkelt die große Schneefläche. Play-Mode und Gerät bei Tageslicht sind hell.
-- Der linke Stand kann auf sehr schmalen Portraitdisplays angeschnitten wirken.
-- Lauf- und Arbeitsanimationen sind bewusst einfache prozedurale Voxelbewegungen.
-- Audio ist lokal synthetisiert, ohne Musik.
-- Die erste Sekunde nach dem Kaltstart enthält einen einmaligen Hitch.
+Der gestartete Unity-Batchlauf wartete auf den lokalen Unity-Lizenzdienst und führte innerhalb des verfügbaren
+Laufs keine Methoden aus. Es wurden deshalb keine V0.2-Screenshots, APKs oder Gerätewerte als bestanden markiert.
+Die vorhandenen V0.1-Artefakte bleiben unverändert und gelten nicht als V0.2-Nachweis.
+
+## Ausstehende Abnahme
+
+1. Unity-Lizenzdienst herstellen und `Wintermarkt/Run Functional Checks` ausführen.
+2. `Wintermarkt/Capture Four Times` ausführen und die vier erzeugten Bilder visuell prüfen.
+3. V0.2-APK auf Android installieren, zwei Minuten aufzeichnen sowie Flugmodus und Framerate messen.

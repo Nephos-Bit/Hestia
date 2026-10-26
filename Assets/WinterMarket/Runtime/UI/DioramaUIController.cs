@@ -1,16 +1,39 @@
 using UnityEngine;
+using System;
 
 namespace WinterMarket
 {
     [DisallowMultipleComponent]
     public sealed class DioramaUIController : MonoBehaviour
     {
+        private const string DebugUiArgument = "-winterDebugUI";
         [SerializeField, Min(1f)] private float hideAfterSeconds = 6f;
         [SerializeField] private QualityController quality;
 
         private float hideAt;
         private bool visible = true;
         private bool audioEnabled;
+
+        /// <summary>
+        /// The release diorama intentionally has no touch-revealed settings panel. Development
+        /// captures can explicitly opt in with -winterDebugUI without changing normal viewing.
+        /// </summary>
+        public static bool IsDebugUiRequested
+        {
+            get
+            {
+                string[] arguments = Environment.GetCommandLineArgs();
+                for (int i = 0; i < arguments.Length; i++)
+                {
+                    if (string.Equals(arguments[i], DebugUiArgument, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+        }
 
         public void Configure(QualityController qualityController)
         {

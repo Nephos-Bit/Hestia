@@ -15,7 +15,8 @@ namespace WinterMarket
         public static readonly Color FirGreen = Hex("557665");
         public static readonly Color Lantern = Hex("FFD19A");
         public static readonly Color Night = Hex("778CA8");
-        public static readonly Color Path = Hex("E7ECEF");
+        // Cleared, compacted ground: deliberately earthy against the surrounding snow.
+        public static readonly Color Path = Hex("6B5846");
         public static readonly Color RoofBlue = Hex("71879A");
         public static readonly Color CoatBlue = Hex("65798B");
         public static readonly Color CoatOchre = Hex("A17D5F");

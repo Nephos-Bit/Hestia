@@ -7,6 +7,22 @@ namespace WinterMarket
     public sealed class PathSystem : MonoBehaviour
     {
         [Serializable]
+        public sealed class NavigationObstacle
+        {
+            [SerializeField] private Vector3 center;
+            [SerializeField] private Vector2 halfExtents;
+
+            public Vector3 Center => center;
+            public Vector2 HalfExtents => halfExtents;
+
+            public NavigationObstacle(Vector3 position, Vector2 extents)
+            {
+                center = position;
+                halfExtents = new Vector2(Mathf.Max(0.01f, extents.x), Mathf.Max(0.01f, extents.y));
+            }
+        }
+
+        [Serializable]
         public sealed class NamedWaypoint
         {
             [SerializeField] private string waypointName;
@@ -68,11 +84,179 @@ namespace WinterMarket
 
         [SerializeField] private NamedWaypoint[] waypoints = Array.Empty<NamedWaypoint>();
         [SerializeField] private NamedRoute[] routes = Array.Empty<NamedRoute>();
+        [SerializeField] private NavigationObstacle[] navigationObstacles = Array.Empty<NavigationObstacle>();
 
         public void Configure(NamedWaypoint[] namedWaypoints, NamedRoute[] namedRoutes)
         {
             waypoints = namedWaypoints ?? Array.Empty<NamedWaypoint>();
             routes = namedRoutes ?? Array.Empty<NamedRoute>();
+            navigationObstacles = Array.Empty<NavigationObstacle>();
+        }
+
+        public void Configure(
+            NamedWaypoint[] namedWaypoints,
+            NamedRoute[] namedRoutes,
+            NavigationObstacle[] obstacles)
+        {
+            waypoints = namedWaypoints ?? Array.Empty<NamedWaypoint>();
+            routes = namedRoutes ?? Array.Empty<NamedRoute>();
+            navigationObstacles = obstacles ?? Array.Empty<NavigationObstacle>();
+        }
+
+        /// <summary>
+        /// Keeps walking figures outside the simplified footprint of every static prop. Routes
+        /// provide the large detours; this is the final contact guard against numerical drift.
+        /// </summary>
+        public Vector3 ConstrainToWalkableSpace(Vector3 previous, Vector3 proposed, float radius)
+        {
+            if (navigationObstacles == null || navigationObstacles.Length == 0)
+            {
+                return proposed;
+            }
+
+            float padding = Mathf.Max(0f, radius);
+            Vector3 constrained = proposed;
+            for (int i = 0; i < navigationObstacles.Length; i++)
+            {
+                NavigationObstacle obstacle = navigationObstacles[i];
+                if (obstacle == null)
+                {
+                    continue;
+                }
+
+                float minX = obstacle.Center.x - obstacle.HalfExtents.x - padding;
+                float maxX = obstacle.Center.x + obstacle.HalfExtents.x + padding;
+                float minZ = obstacle.Center.z - obstacle.HalfExtents.y - padding;
+                float maxZ = obstacle.Center.z + obstacle.HalfExtents.y + padding;
+                if (constrained.x <= minX || constrained.x >= maxX || constrained.z <= minZ || constrained.z >= maxZ)
+                {
+                    continue;
+                }
+
+                float left = constrained.x - minX;
+                float right = maxX - constrained.x;
+                float front = constrained.z - minZ;
+                float back = maxZ - constrained.z;
+                float smallest = Mathf.Min(left, right, front, back);
+                if (smallest == left) constrained.x = minX;
+                else if (smallest == right) constrained.x = maxX;
+                else if (smallest == front) constrained.z = minZ;
+                else constrained.z = maxZ;
+            }
+
+            return constrained;
+        }
+
+        public Vector3 GetObstacleAvoidance(Vector3 position, float radius)
+        {
+            Vector3 steering = Vector3.zero;
+            float range = Mathf.Max(0.05f, radius + 0.38f);
+            if (navigationObstacles == null)
+            {
+                return steering;
+            }
+
+            for (int i = 0; i < navigationObstacles.Length; i++)
+            {
+                NavigationObstacle obstacle = navigationObstacles[i];
+                if (obstacle == null)
+                {
+                    continue;
+                }
+
+                float minX = obstacle.Center.x - obstacle.HalfExtents.x;
+                float maxX = obstacle.Center.x + obstacle.HalfExtents.x;
+                float minZ = obstacle.Center.z - obstacle.HalfExtents.y;
+                float maxZ = obstacle.Center.z + obstacle.HalfExtents.y;
+                Vector3 closest = new Vector3(
+                    Mathf.Clamp(position.x, minX, maxX),
+                    position.y,
+                    Mathf.Clamp(position.z, minZ, maxZ));
+                Vector3 separation = position - closest;
+                separation.y = 0f;
+                float distance = separation.magnitude;
+                if (distance > 0.001f && distance < range)
+                {
+                    steering += separation / distance * ((range - distance) / range);
+                }
+                else if (distance <= 0.001f)
+                {
+                    float left = position.x - minX;
+                    float right = maxX - position.x;
+                    float front = position.z - minZ;
+                    float back = maxZ - position.z;
+                    float smallest = Mathf.Min(left, right, front, back);
+                    if (smallest == left) steering += Vector3.left;
+                    else if (smallest == right) steering += Vector3.right;
+                    else if (smallest == front) steering += Vector3.back;
+                    else steering += Vector3.forward;
+                }
+            }
+
+            return Vector3.ClampMagnitude(steering, 0.8f);
+        }
+
+        /// <summary>
+        /// Finds one clear corner around the first footprint intersected by a route segment.
+        /// NPCBehaviour treats the result as a temporary waypoint, preventing edge-sticking
+        /// without requiring NavMesh data for this very small, procedural scene.
+        /// </summary>
+        public bool TryGetObstacleDetour(
+            Vector3 origin,
+            Vector3 target,
+            float radius,
+            out Vector3 detour)
+        {
+            float padding = Mathf.Max(0f, radius);
+            const float CornerClearance = 0.08f;
+            for (int i = 0; i < navigationObstacles.Length; i++)
+            {
+                NavigationObstacle obstacle = navigationObstacles[i];
+                if (obstacle == null || !IntersectsExpandedObstacle(origin, target, obstacle, padding))
+                {
+                    continue;
+                }
+
+                float minX = obstacle.Center.x - obstacle.HalfExtents.x - padding - CornerClearance;
+                float maxX = obstacle.Center.x + obstacle.HalfExtents.x + padding + CornerClearance;
+                float minZ = obstacle.Center.z - obstacle.HalfExtents.y - padding - CornerClearance;
+                float maxZ = obstacle.Center.z + obstacle.HalfExtents.y + padding + CornerClearance;
+                Vector3[] corners =
+                {
+                    new Vector3(minX, origin.y, minZ),
+                    new Vector3(minX, origin.y, maxZ),
+                    new Vector3(maxX, origin.y, minZ),
+                    new Vector3(maxX, origin.y, maxZ)
+                };
+
+                float bestCost = float.PositiveInfinity;
+                Vector3 best = default;
+                for (int cornerIndex = 0; cornerIndex < corners.Length; cornerIndex++)
+                {
+                    Vector3 candidate = corners[cornerIndex];
+                    if ((candidate - origin).sqrMagnitude < 0.01f ||
+                        SegmentIntersectsAnyObstacle(origin, candidate, padding))
+                    {
+                        continue;
+                    }
+
+                    float cost = Vector3.Distance(origin, candidate) + Vector3.Distance(candidate, target);
+                    if (cost < bestCost)
+                    {
+                        bestCost = cost;
+                        best = candidate;
+                    }
+                }
+
+                if (bestCost < float.PositiveInfinity)
+                {
+                    detour = best;
+                    return true;
+                }
+            }
+
+            detour = default;
+            return false;
         }
 
         public bool TryGetWaypoint(string waypointName, out Vector3 position)
@@ -240,6 +424,11 @@ namespace WinterMarket
             return selected;
         }
 
+        public string GetExitRoute(Vector3 origin)
+        {
+            return origin.x <= 0f ? "WalkThrough" : "WalkThroughReverse";
+        }
+
         private NamedRoute FindRoute(string routeName)
         {
             if (!string.IsNullOrEmpty(routeName) && routes != null)
@@ -255,6 +444,81 @@ namespace WinterMarket
             }
 
             return null;
+        }
+
+        private bool SegmentIntersectsAnyObstacle(Vector3 origin, Vector3 target, float padding)
+        {
+            for (int i = 0; i < navigationObstacles.Length; i++)
+            {
+                NavigationObstacle obstacle = navigationObstacles[i];
+                if (obstacle != null && IntersectsExpandedObstacle(origin, target, obstacle, padding))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool IntersectsExpandedObstacle(
+            Vector3 origin,
+            Vector3 target,
+            NavigationObstacle obstacle,
+            float padding)
+        {
+            float minX = obstacle.Center.x - obstacle.HalfExtents.x - padding;
+            float maxX = obstacle.Center.x + obstacle.HalfExtents.x + padding;
+            float minZ = obstacle.Center.z - obstacle.HalfExtents.y - padding;
+            float maxZ = obstacle.Center.z + obstacle.HalfExtents.y + padding;
+            return IntersectsAxisAlignedRectangle(origin, target, minX, maxX, minZ, maxZ);
+        }
+
+        private static bool IntersectsAxisAlignedRectangle(
+            Vector3 origin,
+            Vector3 target,
+            float minX,
+            float maxX,
+            float minZ,
+            float maxZ)
+        {
+            float enter = 0f;
+            float exit = 1f;
+            if (!ClipAxis(origin.x, target.x - origin.x, minX, maxX, ref enter, ref exit) ||
+                !ClipAxis(origin.z, target.z - origin.z, minZ, maxZ, ref enter, ref exit))
+            {
+                return false;
+            }
+
+            // Contact at the starting point is not a new obstruction; it permits an NPC that
+            // has just rounded a corner to continue towards its original target.
+            return exit > 0.001f && enter < 0.999f;
+        }
+
+        private static bool ClipAxis(
+            float origin,
+            float direction,
+            float minimum,
+            float maximum,
+            ref float enter,
+            ref float exit)
+        {
+            if (Mathf.Abs(direction) < 0.0001f)
+            {
+                return origin >= minimum && origin <= maximum;
+            }
+
+            float first = (minimum - origin) / direction;
+            float second = (maximum - origin) / direction;
+            if (first > second)
+            {
+                float temporary = first;
+                first = second;
+                second = temporary;
+            }
+
+            enter = Mathf.Max(enter, first);
+            exit = Mathf.Min(exit, second);
+            return enter <= exit;
         }
 
         private static bool Contains(NPCRole[] values, NPCRole value)

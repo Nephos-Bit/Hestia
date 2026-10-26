@@ -140,11 +140,13 @@ namespace WinterMarket
             return behaviour;
         }
 
-        internal void ApplyRoleMaterials(NPCVisual target, NPCRole role)
+        internal void ApplyRoleMaterials(NPCVisual target, NPCRole role, uint appearanceSeed)
         {
-            int index = (int)role;
-            Material coat = GetMaterial(coatMaterials, index);
-            Material accent = GetMaterial(accentMaterials, index);
+            int roleIndex = (int)role;
+            int coatIndex = roleIndex + (int)(appearanceSeed % 3u);
+            int accentIndex = roleIndex * 2 + (int)((appearanceSeed >> 5) % 5u);
+            Material coat = GetMaterial(coatMaterials, coatIndex);
+            Material accent = GetMaterial(accentMaterials, accentIndex);
             target.ApplyMaterials(
                 coat,
                 accent,
@@ -244,9 +246,9 @@ namespace WinterMarket
             crate = crateRenderer;
         }
 
-        internal void ApplyRole(NPCRole role)
+        internal void ApplyAppearance(NPCRole role, uint appearanceSeed)
         {
-            owner?.ApplyRoleMaterials(this, role);
+            owner?.ApplyRoleMaterials(this, role, appearanceSeed);
         }
 
         internal void ApplyMaterials(

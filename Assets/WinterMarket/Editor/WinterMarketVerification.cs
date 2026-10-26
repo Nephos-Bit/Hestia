@@ -68,6 +68,7 @@ namespace WinterMarket.Editor
                 ExpectPhase(clock, 9.5f, TimeOfDayPhase.Day, failures);
                 ExpectPhase(clock, 16.5f, TimeOfDayPhase.Evening, failures);
                 ExpectPhase(clock, 20.5f, TimeOfDayPhase.Closing, failures);
+                ExpectPhase(clock, 22.5f, TimeOfDayPhase.Closing, failures);
                 ExpectPhase(clock, 23.5f, TimeOfDayPhase.Night, failures);
             }
             finally
@@ -94,6 +95,10 @@ namespace WinterMarket.Editor
             if (Enum.GetValues(typeof(NPCRole)).Length < 5)
             {
                 failures.Add("Fewer than five NPC roles are declared.");
+            }
+            if (!Enum.IsDefined(typeof(NPCRole), NPCRole.Child))
+            {
+                failures.Add("Child companion role is missing.");
             }
             if (Enum.GetValues(typeof(NPCState)).Length < 9)
             {
@@ -127,6 +132,45 @@ namespace WinterMarket.Editor
                 UnityEngine.Object.FindFirstObjectByType<NPCDirector>() == null)
             {
                 failures.Add("One or more runtime modules did not initialize.");
+            }
+            if (controller.DioramaCamera != null && !controller.DioramaCamera.orthographic)
+            {
+                failures.Add("Diorama camera is no longer orthographic.");
+            }
+            if (controller.GetComponent<DioramaUIController>() != null)
+            {
+                failures.Add("Diorama mode unexpectedly created a visible settings UI.");
+            }
+            if (controller.Paths == null ||
+                controller.Paths.GetRouteWaypointCount("WalkThrough") < 6 ||
+                controller.Paths.GetRouteWaypointCount("MarketStalls") < 5 ||
+                controller.Paths.GetRouteWaypointCount("Delivery") < 3 ||
+                controller.Paths.GetRouteWaypointCount("Cleaning") < 4)
+            {
+                failures.Add("V0.2 pedestrian routes were not configured with spatial variation.");
+            }
+            else
+            {
+                Vector3 boothCenter = new Vector3(-4.35f, 0.55f, 0.95f);
+                Vector3 constrained = controller.Paths.ConstrainToWalkableSpace(
+                    boothCenter + Vector3.left,
+                    boothCenter,
+                    0.24f);
+                Vector3 horizontalOffset = constrained - boothCenter;
+                horizontalOffset.y = 0f;
+                if (horizontalOffset.sqrMagnitude < 0.01f)
+                {
+                    failures.Add("NPC navigation did not reject a position inside the bakery footprint.");
+                }
+                if (!controller.Paths.TryGetObstacleDetour(
+                        new Vector3(-7.2f, 0.55f, 0.95f),
+                        new Vector3(-1.2f, 0.55f, 0.95f),
+                        0.24f,
+                        out Vector3 detour) ||
+                    Mathf.Abs(detour.z - 0.95f) < 0.5f)
+                {
+                    failures.Add("NPC navigation did not create a usable detour around the bakery footprint.");
+                }
             }
             if (UnityEngine.Object.FindObjectsByType<VoxelAssetGenerator>(FindObjectsSortMode.None).Length < 12)
             {

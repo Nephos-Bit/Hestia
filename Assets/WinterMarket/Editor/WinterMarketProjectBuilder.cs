@@ -51,9 +51,9 @@ namespace WinterMarket.Editor
 
             controller.Build();
             Capture(controller, 7.5f, "morning-0730.png");
-            Capture(controller, 14.5f, "afternoon-1430.png");
+            Capture(controller, 14f, "afternoon-1400.png");
             Capture(controller, 19f, "evening-1900.png");
-            Capture(controller, 1f, "night-0100.png");
+            Capture(controller, 22.5f, "closing-2230.png");
             EditorSceneManager.MarkSceneDirty(scene);
             Debug.Log("WINTERMARKT_CAPTURE_PASS count=4");
         }
@@ -64,7 +64,7 @@ namespace WinterMarket.Editor
             PrepareProject();
             string root = Directory.GetParent(Application.dataPath)?.FullName
                 ?? throw new InvalidOperationException("Could not resolve project root.");
-            string output = Path.Combine(root, "Builds", "Android", "Wintermarkt-v0.1.apk");
+            string output = Path.Combine(root, "Builds", "Android", "Wintermarkt-v0.2.apk");
             Directory.CreateDirectory(Path.GetDirectoryName(output) ?? root);
             string shortGradleHome = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -112,6 +112,17 @@ namespace WinterMarket.Editor
                 EditorUtility.SetDirty(rendererData);
             }
 
+            // Existing V0.1 projects already have the feature asset. Re-enable it here as
+            // well so Prepare Project consistently restores subtle contact shading.
+            for (int i = 0; i < rendererData.rendererFeatures.Count; i++)
+            {
+                if (rendererData.rendererFeatures[i] is ScreenSpaceAmbientOcclusion ambientOcclusion)
+                {
+                    ambientOcclusion.SetActive(true);
+                    EditorUtility.SetDirty(ambientOcclusion);
+                }
+            }
+
             UniversalRenderPipelineAsset pipeline =
                 AssetDatabase.LoadAssetAtPath<UniversalRenderPipelineAsset>(PipelinePath);
             if (pipeline == null)
@@ -139,7 +150,7 @@ namespace WinterMarket.Editor
         {
             PlayerSettings.companyName = "Felix Seltmann";
             PlayerSettings.productName = "Wintermarkt";
-            PlayerSettings.bundleVersion = "0.1.0";
+            PlayerSettings.bundleVersion = "0.2.0";
             PlayerSettings.colorSpace = ColorSpace.Linear;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
             PlayerSettings.allowedAutorotateToPortrait = true;

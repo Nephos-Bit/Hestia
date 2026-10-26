@@ -19,6 +19,7 @@ namespace WinterMarket
             palette[6] = LoadOrCreate("WarmEmission", "Warm Emission", lit, WinterPalette.Lantern, 0.08f, true);
             palette[7] = LoadOrCreate("NightBlue", "Night Blue", lit, WinterPalette.Night, 0.03f);
             palette[8] = LoadOrCreate("SnowPath", "Snow Path", lit, WinterPalette.Path, 0.01f);
+            SetColor(palette[8], WinterPalette.Path);
             palette[9] = LoadOrCreate("BlueGreyRoof", "Blue Grey Roof", lit, WinterPalette.RoofBlue, 0.03f);
             palette[10] = LoadOrCreate("Skin", "Skin", lit, WinterPalette.Skin, 0.02f);
             palette[11] = LoadOrCreate("CoatBlue", "Coat Blue", lit, WinterPalette.CoatBlue, 0.02f);

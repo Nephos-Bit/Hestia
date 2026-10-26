@@ -96,7 +96,9 @@ namespace WinterMarket
                 Resources.FindObjectsOfTypeAll<ScreenSpaceAmbientOcclusion>();
             for (int i = 0; i < ambientOcclusionFeatures.Length; i++)
             {
-                ambientOcclusionFeatures[i].SetActive(safeQuality == QualityLevel.High);
+                // It is deliberately low-cost in the renderer asset (one sample, low blur),
+                // but must remain present on the 30-FPS profile for contact depth in snow.
+                ambientOcclusionFeatures[i].SetActive(true);
             }
 
             bool qualityChanged = currentQuality != safeQuality;

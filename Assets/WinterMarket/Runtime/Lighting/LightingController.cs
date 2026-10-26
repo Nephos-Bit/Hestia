@@ -103,6 +103,22 @@ namespace WinterMarket
             fogColor = new Color(0.5f, 0.58f, 0.68f, 1f),
             fogDensity = 0.016f
         };
+        [SerializeField] private LightingLook closing = new LightingLook
+        {
+            hour = 22.5f,
+            directionalEulerAngles = new Vector3(7f, 226f, 0f),
+            directionalColor = new Color(0.44f, 0.53f, 0.7f, 1f),
+            directionalIntensity = 0.14f,
+            ambientColor = new Color(0.27f, 0.34f, 0.46f, 1f),
+            ambientIntensity = 0.86f,
+            reflectionIntensity = 0.34f,
+            localLightColor = new Color(1f, 0.5f, 0.22f, 1f),
+            localLightIntensityMultiplier = 0.72f,
+            rendererEmissionIntensity = 0.78f,
+            backgroundColor = new Color(0.43f, 0.5f, 0.61f, 1f),
+            fogColor = new Color(0.42f, 0.49f, 0.6f, 1f),
+            fogDensity = 0.018f
+        };
 
         private float[] localLightBaseIntensities = Array.Empty<float>();
         private MaterialPropertyBlock propertyBlock;
@@ -287,9 +303,9 @@ namespace WinterMarket
         {
             if (hour < night.hour)
             {
-                from = evening;
+                from = closing;
                 to = night;
-                interpolation = Mathf.InverseLerp(evening.hour, night.hour + HoursPerDay, hour + HoursPerDay);
+                interpolation = Mathf.InverseLerp(closing.hour, night.hour + HoursPerDay, hour + HoursPerDay);
                 return;
             }
 
@@ -317,9 +333,17 @@ namespace WinterMarket
                 return;
             }
 
-            from = evening;
+            if (hour < closing.hour)
+            {
+                from = evening;
+                to = closing;
+                interpolation = Mathf.InverseLerp(evening.hour, closing.hour, hour);
+                return;
+            }
+
+            from = closing;
             to = night;
-            interpolation = Mathf.InverseLerp(evening.hour, night.hour + HoursPerDay, hour);
+            interpolation = Mathf.InverseLerp(closing.hour, night.hour + HoursPerDay, hour);
         }
 
         private void Subscribe()
@@ -433,6 +457,22 @@ namespace WinterMarket
                 backgroundColor = new Color(0.52f, 0.6f, 0.7f, 1f),
                 fogColor = new Color(0.5f, 0.58f, 0.68f, 1f),
                 fogDensity = 0.016f
+            };
+            closing = new LightingLook
+            {
+                hour = 22.5f,
+                directionalEulerAngles = new Vector3(7f, 226f, 0f),
+                directionalColor = new Color(0.44f, 0.53f, 0.7f, 1f),
+                directionalIntensity = 0.14f,
+                ambientColor = new Color(0.27f, 0.34f, 0.46f, 1f),
+                ambientIntensity = 0.86f,
+                reflectionIntensity = 0.34f,
+                localLightColor = new Color(1f, 0.5f, 0.22f, 1f),
+                localLightIntensityMultiplier = 0.72f,
+                rendererEmissionIntensity = 0.78f,
+                backgroundColor = new Color(0.43f, 0.5f, 0.61f, 1f),
+                fogColor = new Color(0.42f, 0.49f, 0.6f, 1f),
+                fogDensity = 0.018f
             };
         }
 

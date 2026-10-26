@@ -14,6 +14,7 @@ namespace WinterMarket
         private Material[] palette;
         private Material snowParticleMaterial;
         private Material snowCapMaterial;
+        private DioramaPlacementGrid placementGrid;
         private Transform worldRoot;
         private readonly List<Light> warmLights = new List<Light>(6);
         private readonly List<Renderer> warmRenderers = new List<Renderer>(12);
@@ -61,16 +62,17 @@ namespace WinterMarket
 
             worldRoot = new GameObject("Procedural Voxel World").transform;
             worldRoot.SetParent(transform, false);
+            placementGrid = new DioramaPlacementGrid(Grid);
 
             BuildGround();
-            BuildStall("Bäckerei", new Vector3(-2.85f, 0f, 0.85f), VoxelMaterialSlot.Slot4, true);
-            BuildStall("Heisse Getränke", new Vector3(2.85f, 0f, 0.35f), VoxelMaterialSlot.Slot9, false);
-            BuildTree(new Vector3(0.05f, 0f, -0.55f));
-            BuildLamp("Laterne West", new Vector3(-4.35f, 0f, -2.15f));
-            BuildLamp("Laterne Ost", new Vector3(4.35f, 0f, -2.15f));
-            BuildBench(new Vector3(-3.75f, 0f, -1.35f));
-            BuildCrates(new Vector3(3.65f, 0f, 2.45f));
-            BuildCart(new Vector3(4.4f, 0f, 2.2f));
+            BuildStall("Bäckerei", new Vector3(-4.35f, 0f, 0.95f), VoxelMaterialSlot.Slot4, true);
+            BuildStall("Heisse Getränke", new Vector3(4.35f, 0f, 0.55f), VoxelMaterialSlot.Slot9, false);
+            BuildTree(new Vector3(0f, 0f, 1.45f));
+            BuildLamp("Laterne West", new Vector3(-6.1f, 0f, -2.25f));
+            BuildLamp("Laterne Ost", new Vector3(6.1f, 0f, -2.25f));
+            BuildBench(new Vector3(-8.3f, 0f, -0.7f));
+            BuildCrates(new Vector3(8.2f, 0f, 3.3f));
+            BuildCart(new Vector3(4.8f, 0f, 3.5f));
             BuildSnowMounds();
 
             BuildCamera();
@@ -89,154 +91,203 @@ namespace WinterMarket
             groundRenderer.shadowCastingMode = ShadowCastingMode.Off;
             groundRenderer.receiveShadows = true;
 
-            var path = new VoxelVolume(new Vector3Int(175, 1, 17));
-            path.FillCuboid(0, 0, 0, 175, 1, 17, VoxelMaterialSlot.Slot8);
+            const int pathWidth = 13;
+            Vector3 pathCenter = new Vector3(0f, 0.305f, -2.675f);
+            placementGrid.ReserveWalkway("Hauptweg", pathCenter, 175, pathWidth);
+            // Main route and both stall entrances are a single volume. Separate coplanar
+            // path meshes caused visible overlap bands where their footprints met.
+            var path = new VoxelVolume(new Vector3Int(175, 1, 30));
+            path.FillCuboid(0, 0, 4, 175, 1, pathWidth, VoxelMaterialSlot.Slot8);
+            path.FillCuboid(52, 0, 17, 13, 1, 7, VoxelMaterialSlot.Slot8);
+            path.FillCuboid(110, 0, 17, 13, 1, 5, VoxelMaterialSlot.Slot8);
             VoxelAssetGenerator pathAsset = CreateAsset(
-                "Verschneiter Fussweg",
+                "Freigeräumter Hauptweg",
                 path,
-                new Vector3(0f, 0.305f, -2.5f),
+                new Vector3(0f, 0.305f, -2f),
                 true);
             pathAsset.transform.rotation = Quaternion.Euler(0f, -3f, 0f);
 
-            var pathDusting = new VoxelVolume(new Vector3Int(175, 1, 17));
-            for (int x = 0; x < 175; x += 11)
-            {
-                int width = 3 + (x % 5);
-                pathDusting.FillCuboid(x, 0, x % 12, width, 1, 2, VoxelMaterialSlot.Slot1);
-            }
+            ReserveClearedAccess("Geräumter Zugang Bäckerei", new Vector3(-4.35f, 0.305f, -1.175f), 13, 7);
+            ReserveClearedAccess("Geräumter Zugang Getränke", new Vector3(4.35f, 0.305f, -1.325f), 13, 5);
+        }
 
-            VoxelAssetGenerator dusting = CreateAsset(
-                "Schneespuren auf dem Weg",
-                pathDusting,
-                new Vector3(0f, 0.46f, -2.5f),
-                true);
-            dusting.transform.rotation = pathAsset.transform.rotation;
+        private void ReserveClearedAccess(string objectName, Vector3 position, int width, int depth)
+        {
+            placementGrid.ReserveWalkway(objectName, position, width, depth);
         }
 
         private void BuildStall(string objectName, Vector3 position, VoxelMaterialSlot roof, bool bakery)
         {
-            var volume = new VoxelVolume(new Vector3Int(25, 24, 17));
-            var snowCap = new VoxelVolume(new Vector3Int(25, 24, 17));
+            var volume = new VoxelVolume(new Vector3Int(29, 28, 19));
+            placementGrid.ReserveObject(objectName, position, volume.Width, volume.Depth);
+            var snowCap = new VoxelVolume(new Vector3Int(29, 28, 19));
+            var glow = new VoxelVolume(new Vector3Int(29, 28, 19));
             VoxelMaterialSlot wood = bakery ? VoxelMaterialSlot.Slot2 : VoxelMaterialSlot.Slot3;
 
-            volume.FillCuboid(1, 0, 1, 23, 2, 15, VoxelMaterialSlot.Slot3);
-            volume.FillCuboid(2, 2, 2, 2, 16, 2, VoxelMaterialSlot.Slot3);
-            volume.FillCuboid(21, 2, 2, 2, 16, 2, VoxelMaterialSlot.Slot3);
-            volume.FillCuboid(2, 2, 13, 2, 16, 2, VoxelMaterialSlot.Slot3);
-            volume.FillCuboid(21, 2, 13, 2, 16, 2, VoxelMaterialSlot.Slot3);
-            volume.FillCuboid(1, 2, 14, 23, 15, 2, wood);
-            volume.FillCuboid(1, 2, 2, 2, 15, 12, VoxelMaterialSlot.Slot3);
-            volume.FillCuboid(22, 2, 2, 2, 15, 12, VoxelMaterialSlot.Slot3);
-            volume.FillCuboid(3, 8, 1, 19, 2, 3, VoxelMaterialSlot.Slot2);
-            volume.FillCuboid(3, 7, 1, 19, 1, 1, VoxelMaterialSlot.Slot3);
-            volume.FillCuboid(4, 3, 13, 17, 11, 1, VoxelMaterialSlot.Slot6);
-            volume.FillCuboid(3, 3, 13, 1, 12, 1, VoxelMaterialSlot.Slot2);
-            volume.FillCuboid(21, 3, 13, 1, 12, 1, VoxelMaterialSlot.Slot2);
+            // The front faces the camera. A few large parts make each booth legible without
+            // turning it into texture-like visual noise.
+            volume.FillCuboid(1, 0, 1, 27, 2, 17, VoxelMaterialSlot.Slot3);
+            volume.FillCuboid(2, 2, 2, 2, 18, 2, VoxelMaterialSlot.Slot3);
+            volume.FillCuboid(25, 2, 2, 2, 18, 2, VoxelMaterialSlot.Slot3);
+            volume.FillCuboid(2, 2, 15, 2, 18, 2, VoxelMaterialSlot.Slot3);
+            volume.FillCuboid(25, 2, 15, 2, 18, 2, VoxelMaterialSlot.Slot3);
+            volume.FillCuboid(1, 2, 16, 27, 16, 2, wood);
+            volume.FillCuboid(1, 2, 2, 2, 15, 14, VoxelMaterialSlot.Slot3);
+            volume.FillCuboid(26, 2, 2, 2, 15, 14, VoxelMaterialSlot.Slot3);
 
-            for (int z = 0; z < 17; z++)
+            // Counter, service opening, and a deep lintel provide a readable handmade frame.
+            volume.FillCuboid(3, 8, 0, 23, 2, 4, VoxelMaterialSlot.Slot2);
+            volume.FillCuboid(3, 7, 1, 23, 1, 2, VoxelMaterialSlot.Slot3);
+            volume.FillCuboid(3, 16, 1, 23, 2, 2, VoxelMaterialSlot.Slot3);
+            volume.FillCuboid(4, 4, 14, 21, 10, 1, VoxelMaterialSlot.Slot14);
+            volume.FillCuboid(3, 3, 14, 2, 14, 1, VoxelMaterialSlot.Slot2);
+            volume.FillCuboid(24, 3, 14, 2, 14, 1, VoxelMaterialSlot.Slot2);
+            volume.FillCuboid(3, 18, 1, 23, 1, 2, bakery ? VoxelMaterialSlot.Slot4 : VoxelMaterialSlot.Slot5);
+
+            for (int x = 5; x <= 22; x += 5)
             {
-                int distance = Mathf.Abs(z - 8);
-                int roofY = 17 + Mathf.Max(0, 7 - distance) / 2;
-                volume.FillCuboid(0, roofY, z, 25, 2, 1, roof);
-                snowCap.FillCuboid(0, roofY + 2, z, 25, 1, 1, VoxelMaterialSlot.Slot0);
-                if (z == 0 || z == 16)
+                volume.FillCuboid(x, 18, 0, 2, 1, 2, (x / 5) % 2 == 0
+                    ? VoxelMaterialSlot.Slot4
+                    : VoxelMaterialSlot.Slot5);
+            }
+
+            for (int z = 0; z < 19; z++)
+            {
+                int distance = Mathf.Abs(z - 9);
+                int roofY = 20 + Mathf.Max(0, 8 - distance) / 2;
+                volume.FillCuboid(0, roofY, z, 29, 2, 1, roof);
+                snowCap.FillCuboid(0, roofY + 2, z, 29, 1, 1, VoxelMaterialSlot.Slot0);
+                if (z == 0 || z == 18)
                 {
-                    volume.FillCuboid(0, roofY - 1, z, 25, 1, 1, VoxelMaterialSlot.Slot3);
+                    volume.FillCuboid(0, roofY - 1, z, 29, 1, 1, VoxelMaterialSlot.Slot3);
                 }
             }
 
-            volume.FillCuboid(0, 18, 0, 25, 1, 1, VoxelMaterialSlot.Empty);
-            volume.FillCuboid(0, 18, 16, 25, 1, 1, VoxelMaterialSlot.Empty);
-            snowCap.FillCuboid(0, 18, 0, 25, 1, 1, VoxelMaterialSlot.Slot0);
-            snowCap.FillCuboid(0, 18, 16, 25, 1, 1, VoxelMaterialSlot.Slot0);
-
             if (bakery)
             {
-                for (int x = 5; x <= 18; x += 4)
+                for (int x = 6; x <= 20; x += 5)
                 {
-                    volume.FillCuboid(x, 10, 2, 2, 1, 2, VoxelMaterialSlot.Slot12);
-                    volume.FillCuboid(x, 11, 2, 2, 1, 2, VoxelMaterialSlot.Slot6);
+                    volume.FillCuboid(x, 10, 2, 3, 1, 2, VoxelMaterialSlot.Slot12);
+                    volume.FillCuboid(x + 1, 11, 2, 1, 1, 2, VoxelMaterialSlot.Slot14);
                 }
             }
             else
             {
-                for (int x = 6; x <= 18; x += 4)
+                for (int x = 6; x <= 20; x += 5)
                 {
                     volume.FillCuboid(x, 10, 2, 2, 2, 2, VoxelMaterialSlot.Slot14);
-                    volume.FillCuboid(x, 12, 2, 2, 1, 2, VoxelMaterialSlot.Slot6);
+                    volume.FillCuboid(x, 12, 2, 2, 1, 2, VoxelMaterialSlot.Slot4);
                 }
             }
 
+            // Separate glowing voxels keep the wooden structure from becoming uniformly emissive.
+            glow.FillCuboid(5, 14, 13, 19, 1, 1, VoxelMaterialSlot.Slot6);
+            glow.FillCuboid(7, 12, 13, 2, 1, 1, VoxelMaterialSlot.Slot6);
+            glow.FillCuboid(19, 12, 13, 2, 1, 1, VoxelMaterialSlot.Slot6);
+
             VoxelAssetGenerator asset = CreateAsset(objectName, volume, position, true);
             CreateSnowCap(objectName + " Dachschnee", snowCap, position);
-            warmRenderers.Add(asset.GetComponent<Renderer>());
-            Vector3 lightPosition = position + new Vector3(0f, 1.7f, -0.25f);
-            warmLights.Add(CreateWarmLight(objectName + " Innenlicht", lightPosition, 3.6f, 1.85f));
+            VoxelAssetGenerator glowAsset = CreateAsset(objectName + " Fensterlicht", glow, position, true);
+            warmRenderers.Add(glowAsset.GetComponent<Renderer>());
+            Vector3 lightPosition = position + new Vector3(0f, 1.85f, -0.45f);
+            warmLights.Add(CreateWarmLight(objectName + " Innenlicht", lightPosition, 3.8f, 1.55f));
 
-            var sign = new VoxelVolume(new Vector3Int(11, 5, 2));
-            sign.FillCuboid(0, 0, 1, 11, 5, 1, bakery ? VoxelMaterialSlot.Slot4 : VoxelMaterialSlot.Slot5);
-            sign.FillCuboid(1, 1, 1, 9, 3, 1, VoxelMaterialSlot.Slot6);
-            sign.FillCuboid(5, 0, 0, 1, 5, 1, VoxelMaterialSlot.Slot3);
+            var sign = new VoxelVolume(new Vector3Int(13, 6, 2));
+            sign.FillCuboid(0, 0, 1, 13, 6, 1, bakery ? VoxelMaterialSlot.Slot4 : VoxelMaterialSlot.Slot5);
+            sign.FillCuboid(1, 1, 1, 11, 3, 1, VoxelMaterialSlot.Slot14);
+            sign.FillCuboid(6, 0, 0, 1, 6, 1, VoxelMaterialSlot.Slot3);
             VoxelAssetGenerator signAsset = CreateAsset(
                 objectName + " Schild",
                 sign,
-                position + new Vector3(0f, 2.55f, -1.35f),
+                position + new Vector3(0f, 2.8f, -1.45f),
                 true);
-            warmRenderers.Add(signAsset.GetComponent<Renderer>());
         }
 
         private void BuildTree(Vector3 position)
         {
-            var tree = new VoxelVolume(new Vector3Int(15, 22, 15));
-            tree.FillCuboid(6, 0, 6, 3, 7, 3, VoxelMaterialSlot.Slot3);
+            var tree = new VoxelVolume(new Vector3Int(19, 30, 19));
+            placementGrid.ReserveObject("Weihnachtsbaum", position, tree.Width, tree.Depth);
+            var snowCap = new VoxelVolume(new Vector3Int(19, 30, 19));
+            var decorations = new VoxelVolume(new Vector3Int(19, 30, 19));
+            var treeLights = new VoxelVolume(new Vector3Int(19, 30, 19));
+            tree.FillCuboid(8, 0, 8, 3, 8, 3, VoxelMaterialSlot.Slot3);
 
-            for (int y = 5; y < 18; y++)
+            int[] radii = { 8, 8, 7, 7, 6, 6, 5, 5, 4, 4, 3, 3, 2, 1 };
+            for (int layer = 0; layer < radii.Length; layer++)
             {
-                int radius = Mathf.Clamp(6 - (y - 5) / 2, 2, 6);
-                if ((y - 5) % 2 == 0)
-                {
-                    radius = Mathf.Min(6, radius + 1);
-                }
-
-                int start = 7 - radius;
+                int y = 6 + layer;
+                int radius = radii[layer];
+                int start = 9 - radius;
                 int size = radius * 2 + 1;
                 tree.FillCuboid(start, y, start, size, 1, size, VoxelMaterialSlot.Slot5);
+                if (layer < radii.Length - 1 && radius > radii[layer + 1])
+                {
+                    // Snow only occupies the exposed rim above a step, never the green
+                    // voxels of the next tier. This keeps the separate snow mesh z-fight free.
+                    int innerStart = 9 - radii[layer + 1];
+                    int innerSize = radii[layer + 1] * 2 + 1;
+                    snowCap.FillCuboid(start, y + 1, start, size, 1, 1, VoxelMaterialSlot.Slot0);
+                    snowCap.FillCuboid(start, y + 1, start + size - 1, size, 1, 1, VoxelMaterialSlot.Slot0);
+                    snowCap.FillCuboid(start, y + 1, innerStart, 1, 1, innerSize, VoxelMaterialSlot.Slot0);
+                    snowCap.FillCuboid(start + size - 1, y + 1, innerStart, 1, 1, innerSize, VoxelMaterialSlot.Slot0);
+                }
             }
 
-            int[,] lights =
+            int[,] lightPositions =
             {
-                { 1, 7, 7 }, { 12, 8, 8 }, { 4, 10, 1 }, { 10, 11, 12 },
-                { 2, 13, 7 }, { 11, 14, 6 }, { 6, 16, 3 }, { 8, 17, 10 }
+                { 2, 7, 9 }, { 15, 8, 11 }, { 5, 10, 2 }, { 13, 11, 15 },
+                { 3, 13, 9 }, { 14, 15, 7 }, { 7, 17, 4 }, { 11, 18, 13 }
             };
-            for (int i = 0; i < lights.GetLength(0); i++)
+            for (int i = 0; i < lightPositions.GetLength(0); i++)
             {
-                tree.SetVoxel(lights[i, 0], lights[i, 1], lights[i, 2], VoxelMaterialSlot.Slot6);
+                treeLights.SetVoxel(
+                    lightPositions[i, 0],
+                    lightPositions[i, 1],
+                    lightPositions[i, 2],
+                    VoxelMaterialSlot.Slot6);
+                tree.SetVoxel(
+                    lightPositions[i, 0],
+                    lightPositions[i, 1],
+                    lightPositions[i, 2],
+                    VoxelMaterialSlot.Empty);
             }
 
-            tree.FillCuboid(6, 18, 6, 3, 3, 3, VoxelMaterialSlot.Slot6);
-            tree.FillCuboid(5, 19, 7, 5, 1, 1, VoxelMaterialSlot.Slot6);
-            tree.FillCuboid(7, 17, 7, 1, 5, 1, VoxelMaterialSlot.Slot6);
+            decorations.SetVoxel(9, 20, 9, VoxelMaterialSlot.Slot4);
+            decorations.SetVoxel(8, 16, 13, VoxelMaterialSlot.Slot4);
+            decorations.SetVoxel(12, 13, 4, VoxelMaterialSlot.Slot4);
+            tree.SetVoxel(8, 16, 13, VoxelMaterialSlot.Empty);
+            tree.SetVoxel(12, 13, 4, VoxelMaterialSlot.Empty);
+            decorations.FillCuboid(8, 20, 9, 3, 3, 1, VoxelMaterialSlot.Slot6);
+            decorations.FillCuboid(9, 19, 8, 1, 5, 3, VoxelMaterialSlot.Slot6);
 
-            VoxelAssetGenerator asset = CreateAsset("Kleiner Weihnachtsbaum", tree, position, true);
-            warmRenderers.Add(asset.GetComponent<Renderer>());
-            warmLights.Add(CreateWarmLight("Baumlichter", position + new Vector3(0f, 1.75f, 0f), 3.5f, 1.25f));
+            CreateAsset("Gestufter Weihnachtsbaum", tree, position, true);
+            CreateSnowCap("Weihnachtsbaum Schneeschichten", snowCap, position);
+            CreateAsset("Baumschmuck", decorations, position, true);
+            VoxelAssetGenerator lightAsset = CreateAsset("Baumlichter", treeLights, position, true);
+            warmRenderers.Add(lightAsset.GetComponent<Renderer>());
+            warmLights.Add(CreateWarmLight("Baumlichter Licht", position + new Vector3(0f, 2.1f, 0f), 3.4f, 0.95f));
         }
 
         private void BuildLamp(string objectName, Vector3 position)
         {
             var lamp = new VoxelVolume(new Vector3Int(5, 22, 5));
+            placementGrid.ReserveObject(objectName, position, lamp.Width, lamp.Depth, true);
             lamp.FillCuboid(2, 0, 2, 1, 17, 1, VoxelMaterialSlot.Slot13);
             lamp.FillCuboid(1, 16, 1, 3, 5, 3, VoxelMaterialSlot.Slot13);
             lamp.FillCuboid(2, 17, 2, 1, 3, 1, VoxelMaterialSlot.Slot6);
             lamp.FillCuboid(0, 21, 0, 5, 1, 5, VoxelMaterialSlot.Slot0);
-            VoxelAssetGenerator asset = CreateAsset(objectName, lamp, position, true);
-            warmRenderers.Add(asset.GetComponent<Renderer>());
+            CreateAsset(objectName, lamp, position, true);
+            var glow = new VoxelVolume(new Vector3Int(5, 22, 5));
+            glow.FillCuboid(2, 17, 2, 1, 3, 1, VoxelMaterialSlot.Slot6);
+            VoxelAssetGenerator glowAsset = CreateAsset(objectName + " Glut", glow, position, true);
+            warmRenderers.Add(glowAsset.GetComponent<Renderer>());
             warmLights.Add(CreateWarmLight(objectName + " Licht", position + new Vector3(0f, 2.75f, 0f), 3.2f, 1.15f));
         }
 
         private void BuildBench(Vector3 position)
         {
             var bench = new VoxelVolume(new Vector3Int(22, 9, 6));
+            placementGrid.ReserveObject("Holzbank", position, bench.Width, bench.Depth);
             bench.FillCuboid(1, 4, 1, 20, 2, 4, VoxelMaterialSlot.Slot2);
             bench.FillCuboid(1, 7, 5, 20, 2, 1, VoxelMaterialSlot.Slot2);
             bench.FillCuboid(2, 0, 1, 2, 5, 2, VoxelMaterialSlot.Slot3);
@@ -248,6 +299,7 @@ namespace WinterMarket
         private void BuildCrates(Vector3 position)
         {
             var crates = new VoxelVolume(new Vector3Int(18, 10, 12));
+            placementGrid.ReserveObject("Warenkisten", position, crates.Width, crates.Depth);
             FillCrate(crates, 0, 0, 0);
             FillCrate(crates, 8, 0, 2);
             FillCrate(crates, 4, 5, 1);
@@ -264,6 +316,7 @@ namespace WinterMarket
         private void BuildCart(Vector3 position)
         {
             var cart = new VoxelVolume(new Vector3Int(24, 12, 12));
+            placementGrid.ReserveObject("Liefer-Handkarren", position, cart.Width, cart.Depth);
             cart.FillCuboid(2, 5, 1, 15, 5, 10, VoxelMaterialSlot.Slot2);
             cart.FillCuboid(3, 6, 2, 13, 3, 8, VoxelMaterialSlot.Slot3);
             cart.FillCuboid(16, 7, 5, 8, 1, 2, VoxelMaterialSlot.Slot3);
@@ -278,13 +331,14 @@ namespace WinterMarket
         private void BuildSnowMounds()
         {
             CreateMound("Schneehügel Nordwest", new Vector3(-6.3f, 0.31f, 3.5f), 30, 6, 13);
-            CreateMound("Schneehügel Nordost", new Vector3(6.2f, 0.31f, 3.9f), 25, 5, 12);
+            CreateMound("Schneehügel Nordost", new Vector3(6.2f, 0.31f, 5.8f), 25, 5, 12);
             CreateMound("Schneekante vorne", new Vector3(0.2f, 0.31f, -4.35f), 42, 4, 7);
         }
 
         private void CreateMound(string objectName, Vector3 position, int width, int height, int depth)
         {
             var mound = new VoxelVolume(new Vector3Int(width, height, depth));
+            placementGrid.ReserveObject(objectName, position, mound.Width, mound.Depth);
             for (int y = 0; y < height; y++)
             {
                 int inset = y * 2;
@@ -302,12 +356,12 @@ namespace WinterMarket
         {
             var cameraObject = new GameObject("Diorama Camera");
             cameraObject.transform.SetParent(transform, false);
-            cameraObject.transform.position = new Vector3(9.4f, 8.6f, -9.4f);
-            cameraObject.transform.LookAt(new Vector3(0f, 1.05f, -0.1f));
+            cameraObject.transform.position = new Vector3(9.7f, 8.9f, -9.7f);
+            cameraObject.transform.LookAt(new Vector3(0f, 1.18f, -0.15f));
 
             DioramaCamera = cameraObject.AddComponent<Camera>();
             DioramaCamera.orthographic = true;
-            DioramaCamera.orthographicSize = 13.6f;
+            DioramaCamera.orthographicSize = 14.8f;
             DioramaCamera.clearFlags = CameraClearFlags.SolidColor;
             DioramaCamera.backgroundColor = WinterPalette.Background;
             DioramaCamera.nearClipPlane = 0.1f;
@@ -315,7 +369,7 @@ namespace WinterMarket
             DioramaCamera.allowHDR = true;
             DioramaCamera.allowMSAA = true;
             cameraObject.AddComponent<AudioListener>();
-            cameraObject.AddComponent<AdaptiveOrthoCamera>().Configure(13.6f);
+            cameraObject.AddComponent<AdaptiveOrthoCamera>().Configure(14.8f);
         }
 
         private void BuildSystems()
@@ -353,8 +407,11 @@ namespace WinterMarket
             var footsteps = npcRoot.AddComponent<NPCFootstepAudioLink>();
             footsteps.Configure(director, Ambient);
 
-            var ui = gameObject.AddComponent<DioramaUIController>();
-            ui.Configure(Quality);
+            if (DioramaUIController.IsDebugUiRequested)
+            {
+                var ui = gameObject.AddComponent<DioramaUIController>();
+                ui.Configure(Quality);
+            }
             gameObject.AddComponent<FrameDiagnostics>();
         }
 
@@ -371,38 +428,56 @@ namespace WinterMarket
         {
             var points = new[]
             {
-                new PathSystem.NamedWaypoint("west-entry", new Vector3(-9.5f, 0.55f, -2.6f)),
-                new PathSystem.NamedWaypoint("west-path", new Vector3(-4.8f, 0.55f, -2.5f)),
-                new PathSystem.NamedWaypoint("tree", new Vector3(0f, 0.55f, -1.6f)),
-                new PathSystem.NamedWaypoint("bakery", new Vector3(-2.85f, 0.55f, -0.85f)),
-                new PathSystem.NamedWaypoint("drinks", new Vector3(2.85f, 0.55f, -1.25f)),
-                new PathSystem.NamedWaypoint("delivery", new Vector3(3.9f, 0.55f, 2.0f)),
-                new PathSystem.NamedWaypoint("cleaning", new Vector3(0.8f, 0.55f, -0.8f)),
-                new PathSystem.NamedWaypoint("east-path", new Vector3(4.8f, 0.55f, -2.6f)),
-                new PathSystem.NamedWaypoint("east-entry", new Vector3(9.5f, 0.55f, -2.7f))
+                new PathSystem.NamedWaypoint("west-entry", new Vector3(-10.4f, 0.55f, -2.7f)),
+                new PathSystem.NamedWaypoint("west-path", new Vector3(-6.75f, 0.55f, -2.65f)),
+                new PathSystem.NamedWaypoint("west-foreground", new Vector3(-4.15f, 0.55f, -3.35f)),
+                new PathSystem.NamedWaypoint("tree-west", new Vector3(-1.7f, 0.55f, -2.15f)),
+                new PathSystem.NamedWaypoint("tree-east", new Vector3(1.7f, 0.55f, -2.15f)),
+                new PathSystem.NamedWaypoint("bakery", new Vector3(-4.35f, 0.55f, -1.2f)),
+                new PathSystem.NamedWaypoint("bakery-queue", new Vector3(-3.75f, 0.55f, -1.8f)),
+                new PathSystem.NamedWaypoint("drinks", new Vector3(4.35f, 0.55f, -1.4f)),
+                new PathSystem.NamedWaypoint("drinks-queue", new Vector3(3.75f, 0.55f, -1.85f)),
+                new PathSystem.NamedWaypoint("delivery", new Vector3(9.9f, 0.55f, 2.1f)),
+                new PathSystem.NamedWaypoint("delivery-south", new Vector3(9.9f, 0.55f, 0.8f)),
+                new PathSystem.NamedWaypoint("drinks-side", new Vector3(6.95f, 0.55f, -1.5f)),
+                new PathSystem.NamedWaypoint("cleaning", new Vector3(0.8f, 0.55f, -1.35f)),
+                new PathSystem.NamedWaypoint("east-foreground", new Vector3(4.15f, 0.55f, -3.35f)),
+                new PathSystem.NamedWaypoint("east-path", new Vector3(6.75f, 0.55f, -2.65f)),
+                new PathSystem.NamedWaypoint("east-entry", new Vector3(10.4f, 0.55f, -2.7f))
             };
             var routes = new[]
             {
                 new PathSystem.NamedRoute(
                     "WalkThrough",
-                    new[] { "west-entry", "west-path", "tree", "east-path", "east-entry" }),
+                    new[] { "west-entry", "west-path", "west-foreground", "tree-west", "tree-east", "east-path", "east-entry" }),
                 new PathSystem.NamedRoute(
                     "WalkThroughReverse",
-                    new[] { "east-entry", "east-path", "tree", "west-path", "west-entry" }),
+                    new[] { "east-entry", "east-path", "east-foreground", "tree-east", "tree-west", "west-path", "west-entry" }),
                 new PathSystem.NamedRoute(
                     "MarketStalls",
-                    new[] { "west-entry", "west-path", "tree", "bakery" }),
+                    new[] { "west-entry", "west-path", "tree-west", "bakery-queue", "bakery" }),
                 new PathSystem.NamedRoute(
                     "MarketStallsReverse",
-                    new[] { "east-entry", "east-path", "tree", "drinks" }),
+                    new[] { "east-entry", "east-path", "tree-east", "drinks-queue", "drinks" }),
                 new PathSystem.NamedRoute(
                     "Delivery",
-                    new[] { "east-entry", "delivery", "drinks" }),
+                    new[] { "east-entry", "delivery", "delivery-south", "drinks-side", "drinks-queue", "drinks" }),
                 new PathSystem.NamedRoute(
                     "Cleaning",
                     new[] { "east-entry", "east-path", "cleaning", "bakery" })
             };
-            Paths.Configure(points, routes);
+            var obstacles = new[]
+            {
+                new PathSystem.NavigationObstacle(new Vector3(-4.35f, 0f, 0.95f), new Vector2(2.25f, 1.55f)),
+                new PathSystem.NavigationObstacle(new Vector3(4.35f, 0f, 0.55f), new Vector2(2.25f, 1.55f)),
+                new PathSystem.NavigationObstacle(new Vector3(0f, 0f, 1.45f), new Vector2(1.5f, 1.5f)),
+                new PathSystem.NavigationObstacle(new Vector3(-6.1f, 0f, -2.25f), new Vector2(0.3f, 0.3f)),
+                new PathSystem.NavigationObstacle(new Vector3(6.1f, 0f, -2.25f), new Vector2(0.3f, 0.3f)),
+                new PathSystem.NavigationObstacle(new Vector3(-8.3f, 0f, -0.7f), new Vector2(1.8f, 0.6f)),
+                new PathSystem.NavigationObstacle(new Vector3(8.2f, 0f, 3.3f), new Vector2(1.4f, 1.1f)),
+                new PathSystem.NavigationObstacle(new Vector3(4.8f, 0f, 3.5f), new Vector2(1.8f, 1.1f))
+            };
+            Paths.Configure(points, routes, obstacles);
         }
 
         private VoxelAssetGenerator CreateAsset(
@@ -446,9 +521,9 @@ namespace WinterMarket
             light.color = new Color(0.9f, 0.95f, 1f);
             light.intensity = 1f;
             light.shadows = LightShadows.Soft;
-            light.shadowStrength = 0.38f;
-            light.shadowBias = 0.04f;
-            light.shadowNormalBias = 0.28f;
+            light.shadowStrength = 0.48f;
+            light.shadowBias = 0.035f;
+            light.shadowNormalBias = 0.22f;
             return light;
         }
 
@@ -492,6 +567,7 @@ namespace WinterMarket
             snowParticleMaterial = null;
             snowCapMaterial = null;
             worldRoot = null;
+            placementGrid = null;
             TimeOfDay = null;
             Lighting = null;
             Quality = null;
@@ -514,6 +590,78 @@ namespace WinterMarket
             WinterMarketMaterialLibrary.DestroyOwned(palette);
             WinterMarketMaterialLibrary.DestroyOwned(snowParticleMaterial);
             WinterMarketMaterialLibrary.DestroyOwned(snowCapMaterial);
+        }
+    }
+
+    /// <summary>
+    /// Ground-plane reservation grid used while the procedural scene is assembled. It keeps
+    /// pedestrian surfaces clear and turns accidental prop intersections into build errors.
+    /// </summary>
+    internal sealed class DioramaPlacementGrid
+    {
+        private readonly float cellSize;
+        private readonly HashSet<Vector2Int> walkwayCells = new HashSet<Vector2Int>();
+        private readonly Dictionary<Vector2Int, string> objectCells = new Dictionary<Vector2Int, string>();
+
+        public DioramaPlacementGrid(float gridCellSize)
+        {
+            cellSize = Mathf.Max(0.01f, gridCellSize);
+        }
+
+        public void ReserveWalkway(string objectName, Vector3 center, int widthCells, int depthCells)
+        {
+            foreach (Vector2Int cell in EnumerateFootprint(center, widthCells, depthCells))
+            {
+                if (objectCells.TryGetValue(cell, out string blockingObject))
+                {
+                    throw new InvalidOperationException(
+                        $"Walkway '{objectName}' overlaps object '{blockingObject}' at {cell}.");
+                }
+
+                walkwayCells.Add(cell);
+            }
+        }
+
+        public void ReserveObject(
+            string objectName,
+            Vector3 center,
+            int widthCells,
+            int depthCells,
+            bool mayStandOnWalkway = false)
+        {
+            foreach (Vector2Int cell in EnumerateFootprint(center, widthCells, depthCells))
+            {
+                if (objectCells.TryGetValue(cell, out string blockingObject))
+                {
+                    throw new InvalidOperationException(
+                        $"Object '{objectName}' overlaps object '{blockingObject}' at {cell}.");
+                }
+
+                if (!mayStandOnWalkway && walkwayCells.Contains(cell))
+                {
+                    throw new InvalidOperationException(
+                        $"Object '{objectName}' occupies the cleared walkway at {cell}.");
+                }
+
+                objectCells.Add(cell, objectName);
+            }
+        }
+
+        private IEnumerable<Vector2Int> EnumerateFootprint(Vector3 center, int widthCells, int depthCells)
+        {
+            float halfWidth = Mathf.Max(1, widthCells) * cellSize * 0.5f;
+            float halfDepth = Mathf.Max(1, depthCells) * cellSize * 0.5f;
+            int minX = Mathf.FloorToInt((center.x - halfWidth) / cellSize);
+            int maxX = Mathf.CeilToInt((center.x + halfWidth) / cellSize) - 1;
+            int minZ = Mathf.FloorToInt((center.z - halfDepth) / cellSize);
+            int maxZ = Mathf.CeilToInt((center.z + halfDepth) / cellSize) - 1;
+            for (int z = minZ; z <= maxZ; z++)
+            {
+                for (int x = minX; x <= maxX; x++)
+                {
+                    yield return new Vector2Int(x, z);
+                }
+            }
         }
     }
 }

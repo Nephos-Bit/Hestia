@@ -1,7 +1,9 @@
-# Wintermarkt – Diorama Prototype V0.1
+# Wintermarkt – Diorama Prototype V0.2
 
 Ein vollständig lokales, passiv beobachtbares Wintermarkt-Diorama für Android. Die Szene wird aus echten
 Voxel-Meshes aufgebaut, folgt der lokalen Gerätezeit und simuliert ruhige Alltagssituationen mit bis zu sechs NPCs.
+V0.2 ergänzt handgearbeitete Buden, gestufte Schneekanten am Baum, getrennte Emissions-Voxel, dezente AO und
+vielfältigere Figurenbewegungen.
 
 ## Voraussetzungen
 
@@ -25,10 +27,10 @@ verwendet. Außerhalb der Nacht erscheint die erste Aktivität normalerweise inn
 ### Bedienung
 
 - Das Diorama benötigt keine Eingabe.
-- Das kleine Einstellungsfeld blendet sich nach sechs Sekunden aus.
-- Eine Berührung blendet es erneut ein.
-- Das Feld schaltet Qualität und lokale Audiowiedergabe um.
+- Der Diorama-Modus enthält kein sichtbares HUD und reagiert nicht mit einem Einstellungsmenü auf Berührung.
 - Die Kamera ist absichtlich stabil und nicht frei drehbar.
+
+Für Entwicklungsbuilds kann das separate Debug-Menü ausdrücklich über `-winterDebugUI` aktiviert werden.
 
 ### Debug-Zeit
 
@@ -47,30 +49,32 @@ Systemzeit.
 - `VoxelVolume`, `VoxelGreedyMesher`, `VoxelAssetGenerator`: 0,15-m-Raster, verdeckte Flächen entfernt,
   coplanare Flächen zu Quads zusammengefasst
 - `TimeOfDayController`: lokale Uhr, fünf Tagesphasen und Debug-Override
-- `LightingController`: kontinuierliche Übergänge zwischen Nacht, Morgen, Nachmittag und Abend
+- `LightingController`: kontinuierliche Übergänge zwischen Nacht, Morgen, Nachmittag, Abend und Marktschluss
 - `PathSystem`: benannte, plausible Routen und Ziele
 - `NPCDirector`: Pooling, Aktivitätsdichte und gewichtete Rollenwahl
-- `NPCBehaviour`: erweiterbare Zustandsmaschine und ruhige prozedurale Körperanimation
+- `NPCBehaviour`: erweiterbare Zustandsmaschine, individuelle Kleidung/Körperproportionen,
+  Abstandhalten und seltene Begegnungspausen
 - `AmbientController`: mehrschichtiger Schneefall und lokal synthetisierte Wind-/Schrittgeräusche
 - `QualityController`: Standard-/High-Profil, Render Scale, Schatten, SSAO und Partikellimits
 - `LocalSettings`: ausschließlich lokale `PlayerPrefs`
 - `FrameDiagnostics`: periodische Framerate- und zehnminütige Soak-Test-Meldungen
 
-Die NPC-Rollen sind Passant, Besucher, Standbetreiber, Lieferant und Reinigungskraft. Beobachtbare Abläufe umfassen
-Durchqueren, Verweilen, Standbesuch, Lieferung und abendliches Aufräumen.
+Die erwachsenen NPC-Rollen sind Passant, Besucher, Standbetreiber, Lieferant und Reinigungskraft. Kinder erscheinen
+nur als kleinere Begleitung eines Passanten oder Besuchers und folgen diesem durch die Szene. Beobachtbare Abläufe
+umfassen Durchqueren, Verweilen, Standbesuch, Lieferung und abendliches Aufräumen.
 
 ## Rendering und Mobile-Profile
 
-`Standard` zielt auf 30 FPS, 0,85 Render Scale, 1024er Hauptlichtschatten, reduzierte lokale Lichter und deaktiviertes
-SSAO. `High` zielt auf 60 FPS, volle Render Scale, 2048er Schatten, zusätzliche Lichter und SSAO. Lokale Punktlichter
-werfen keine Schatten; das Directional Light verwendet weiche dynamische Schatten.
+`Standard` zielt auf 30 FPS, 0,85 Render Scale, 1024er Hauptlichtschatten, reduzierte lokale Lichter und dezentes
+SSAO. `High` zielt auf 60 FPS, volle Render Scale, 2048er Schatten und zusätzliche Lichter. Lokale Punktlichter werfen
+keine Schatten; das Directional Light verwendet weiche dynamische Schatten.
 
 ## Automatisierung
 
 Im Unity-Menü `Wintermarkt` stehen folgende Befehle bereit:
 
 - `Prepare Project`: URP, Android Player Settings und Startszene erzeugen
-- `Capture Four Times`: Renderings für 07:30, 14:30, 19:00 und 01:00 schreiben
+- `Capture Four Times`: Renderings für 07:30, 14:00, 19:00 und 22:30 schreiben
 - `Run Functional Checks`: Mesh-, Zeit-, Rollen-, Szenen- und Offline-Prüfungen
 - `Build Android APK`: Development-APK für ARM64 erzeugen
 
@@ -85,19 +89,19 @@ Kommandozeilenbeispiel:
 
 Ausgaben:
 
-- APK: `Builds/Android/Wintermarkt-v0.1.apk`
+- APK: `Builds/Android/Wintermarkt-v0.2.apk`
 - Screenshots: `Artifacts/Screenshots`
-- Geräteaufnahme: `Artifacts/Video/wintermarkt-v0.1-device.mp4`
+- V0.1-Vergleichsaufnahme: `Artifacts/Video/wintermarkt-v0.1-device.mp4`
 - Testbericht: `Docs/TEST_REPORT.md`
 
 Die Android-Startaktivität ist `com.unity3d.player.UnityPlayerGameActivity`. Installation per ADB:
 
 ```powershell
-& "$env:UNITY_ANDROID_SDK\platform-tools\adb.exe" install -r Builds\Android\Wintermarkt-v0.1.apk
+& "$env:UNITY_ANDROID_SDK\platform-tools\adb.exe" install -r Builds\Android\Wintermarkt-v0.2.apk
 & "$env:UNITY_ANDROID_SDK\platform-tools\adb.exe" shell am start -n com.felixseltmann.wintermarkt/com.unity3d.player.UnityPlayerGameActivity
 ```
 
-## Bekannte Grenzen von V0.1
+## Bekannte Grenzen von V0.2
 
 - Keine freie Kamera oder spielerische Progression
 - Keine Wirtschaftssimulation oder fortlaufende Hintergrundsimulation
