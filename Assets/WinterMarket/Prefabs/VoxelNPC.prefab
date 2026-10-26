@@ -118,7 +118,7 @@ GameObject:
   m_Component:
   - component: {fileID: 6899082396204402943}
   - component: {fileID: 7728285342708531118}
-  - component: {fileID: 1371688664264903066}
+  - component: {fileID: 8903594140495388247}
   m_Layer: 0
   m_Name: VoxelNPC
   m_TagString: Untagged
@@ -157,7 +157,7 @@ MonoBehaviour:
   baseMoveSpeed: 0.65
   turnSpeedDegrees: 150
   arrivalDistance: 0.08
---- !u!114 &1371688664264903066
+--- !u!114 &8903594140495388247
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}

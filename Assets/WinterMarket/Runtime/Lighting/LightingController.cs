@@ -27,6 +27,7 @@ namespace WinterMarket
     {
         private const float HoursPerDay = 24f;
         private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+        private static readonly int WinterAmbientId = Shader.PropertyToID("_WinterMarketAmbient");
 
         [Header("Clock")]
         [SerializeField] private TimeOfDayController timeOfDay;
@@ -178,11 +179,14 @@ namespace WinterMarket
             }
 
             RenderSettings.ambientMode = AmbientMode.Flat;
-            RenderSettings.ambientLight = Color.Lerp(from.ambientColor, to.ambientColor, interpolation);
-            RenderSettings.ambientIntensity = Mathf.Lerp(
+            Color ambient = Color.Lerp(from.ambientColor, to.ambientColor, interpolation);
+            float ambientIntensity = Mathf.Lerp(
                 from.ambientIntensity,
                 to.ambientIntensity,
                 interpolation);
+            RenderSettings.ambientLight = ambient;
+            RenderSettings.ambientIntensity = ambientIntensity;
+            Shader.SetGlobalColor(WinterAmbientId, ambient * ambientIntensity);
             RenderSettings.reflectionIntensity = Mathf.Lerp(
                 from.reflectionIntensity,
                 to.reflectionIntensity,

@@ -13,6 +13,7 @@ namespace WinterMarket
 
         private Material[] palette;
         private Material snowParticleMaterial;
+        private Material snowCapMaterial;
         private Transform worldRoot;
         private readonly List<Light> warmLights = new List<Light>(6);
         private readonly List<Renderer> warmRenderers = new List<Renderer>(12);
@@ -56,6 +57,7 @@ namespace WinterMarket
             TearDownBuiltWorld();
             palette = WinterMarketMaterialLibrary.LoadPalette();
             snowParticleMaterial = WinterMarketMaterialLibrary.LoadSnowParticles();
+            snowCapMaterial = WinterMarketMaterialLibrary.CreateSnowCap();
 
             worldRoot = new GameObject("Procedural Voxel World").transform;
             worldRoot.SetParent(transform, false);
@@ -114,6 +116,7 @@ namespace WinterMarket
         private void BuildStall(string objectName, Vector3 position, VoxelMaterialSlot roof, bool bakery)
         {
             var volume = new VoxelVolume(new Vector3Int(25, 24, 17));
+            var snowCap = new VoxelVolume(new Vector3Int(25, 24, 17));
             VoxelMaterialSlot wood = bakery ? VoxelMaterialSlot.Slot2 : VoxelMaterialSlot.Slot3;
 
             volume.FillCuboid(1, 0, 1, 23, 2, 15, VoxelMaterialSlot.Slot3);
@@ -135,15 +138,17 @@ namespace WinterMarket
                 int distance = Mathf.Abs(z - 8);
                 int roofY = 17 + Mathf.Max(0, 7 - distance) / 2;
                 volume.FillCuboid(0, roofY, z, 25, 2, 1, roof);
-                volume.FillCuboid(0, roofY + 2, z, 25, 1, 1, VoxelMaterialSlot.Slot0);
+                snowCap.FillCuboid(0, roofY + 2, z, 25, 1, 1, VoxelMaterialSlot.Slot0);
                 if (z == 0 || z == 16)
                 {
                     volume.FillCuboid(0, roofY - 1, z, 25, 1, 1, VoxelMaterialSlot.Slot3);
                 }
             }
 
-            volume.FillCuboid(0, 18, 0, 25, 1, 1, VoxelMaterialSlot.Slot0);
-            volume.FillCuboid(0, 18, 16, 25, 1, 1, VoxelMaterialSlot.Slot0);
+            volume.FillCuboid(0, 18, 0, 25, 1, 1, VoxelMaterialSlot.Empty);
+            volume.FillCuboid(0, 18, 16, 25, 1, 1, VoxelMaterialSlot.Empty);
+            snowCap.FillCuboid(0, 18, 0, 25, 1, 1, VoxelMaterialSlot.Slot0);
+            snowCap.FillCuboid(0, 18, 16, 25, 1, 1, VoxelMaterialSlot.Slot0);
 
             if (bakery)
             {
@@ -163,6 +168,7 @@ namespace WinterMarket
             }
 
             VoxelAssetGenerator asset = CreateAsset(objectName, volume, position, true);
+            CreateSnowCap(objectName + " Dachschnee", snowCap, position);
             warmRenderers.Add(asset.GetComponent<Renderer>());
             Vector3 lightPosition = position + new Vector3(0f, 1.7f, -0.25f);
             warmLights.Add(CreateWarmLight(objectName + " Innenlicht", lightPosition, 3.6f, 1.85f));
@@ -415,6 +421,21 @@ namespace WinterMarket
             return asset;
         }
 
+        private void CreateSnowCap(string objectName, VoxelVolume volume, Vector3 center)
+        {
+            VoxelAssetGenerator asset = VoxelAssetGenerator.Create(
+                objectName,
+                volume,
+                new[] { snowCapMaterial },
+                worldRoot,
+                true);
+            Vector3 dimensions = new Vector3(volume.Width, volume.Height, volume.Depth) * Grid;
+            asset.transform.position = center - new Vector3(dimensions.x * 0.5f, 0f, dimensions.z * 0.5f);
+            MeshRenderer renderer = asset.GetComponent<MeshRenderer>();
+            renderer.shadowCastingMode = ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+
         private Light CreateDirectionalLight()
         {
             var lightObject = new GameObject("Winter Sun");
@@ -466,8 +487,10 @@ namespace WinterMarket
 
             WinterMarketMaterialLibrary.DestroyOwned(palette);
             WinterMarketMaterialLibrary.DestroyOwned(snowParticleMaterial);
+            WinterMarketMaterialLibrary.DestroyOwned(snowCapMaterial);
             palette = null;
             snowParticleMaterial = null;
+            snowCapMaterial = null;
             worldRoot = null;
             TimeOfDay = null;
             Lighting = null;
@@ -490,6 +513,7 @@ namespace WinterMarket
         {
             WinterMarketMaterialLibrary.DestroyOwned(palette);
             WinterMarketMaterialLibrary.DestroyOwned(snowParticleMaterial);
+            WinterMarketMaterialLibrary.DestroyOwned(snowCapMaterial);
         }
     }
 }

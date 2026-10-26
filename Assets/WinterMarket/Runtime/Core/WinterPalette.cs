@@ -6,6 +6,8 @@ namespace WinterMarket
     {
         public static readonly Color Snow = Hex("F5F7F8");
         public static readonly Color SnowShadow = Hex("DFE8ED");
+        public static readonly Color SnowCap = Hex("C9DCE8");
+        public static readonly Color SnowCapShade = Hex("8EADC0");
         public static readonly Color Background = Hex("FAFBFC");
         public static readonly Color LightWood = Hex("B58C6B");
         public static readonly Color DarkWood = Hex("795A47");

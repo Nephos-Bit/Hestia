@@ -29,6 +29,25 @@ namespace WinterMarket
             return palette;
         }
 
+        public static Material CreateSnowCap()
+        {
+            Material source = Resources.Load<Material>(ResourceFolder + "SnowCap");
+            if (source != null && source.shader != null && source.shader.name != "Hidden/InternalErrorShader")
+            {
+                var copy = new Material(source) { name = "Snow Cap (Runtime)" };
+                ApplySnowCapColors(copy);
+                return copy;
+            }
+
+            Shader shader = Shader.Find("WinterMarket/SnowCap") ?? FindLitShader();
+            var material = shader != null
+                ? new Material(shader)
+                : new Material(Shader.Find("Unlit/Color"));
+            material.name = "Snow Cap (Runtime)";
+            ApplySnowCapColors(material);
+            return material;
+        }
+
         public static Material LoadSnowParticles()
         {
             Material source = Resources.Load<Material>(ResourceFolder + "SnowParticles");
@@ -132,6 +151,26 @@ namespace WinterMarket
             }
 
             return Shader.Find("Standard") ?? Shader.Find("Unlit/Color");
+        }
+
+        private static void ApplySnowCapColors(Material material)
+        {
+            if (material == null)
+            {
+                return;
+            }
+
+            if (material.HasProperty("_TopColor"))
+            {
+                material.SetColor("_TopColor", WinterPalette.SnowCap);
+            }
+
+            if (material.HasProperty("_SideColor"))
+            {
+                material.SetColor("_SideColor", WinterPalette.SnowCapShade);
+            }
+
+            SetColor(material, WinterPalette.SnowCap);
         }
 
         private static void SetColor(Material material, Color color)

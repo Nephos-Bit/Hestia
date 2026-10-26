@@ -187,6 +187,7 @@ namespace WinterMarket.Editor
             EnsureMaterial("Cream", lit, new Color(0.91f, 0.87f, 0.8f), 0.03f);
             EnsureMaterial("DeepGreen", lit, new Color(0.19f, 0.28f, 0.23f), 0.02f);
             EnsureMaterial("SnowParticles", particles, new Color(1f, 1f, 1f, 0.75f), 0f);
+            EnsureSnowCapMaterial();
             AssetDatabase.SaveAssets();
         }
 
@@ -214,6 +215,31 @@ namespace WinterMarket.Editor
                 material.EnableKeyword("_EMISSION");
                 material.SetColor("_EmissionColor", color * 1.1f);
             }
+            EditorUtility.SetDirty(material);
+        }
+
+        private static void EnsureSnowCapMaterial()
+        {
+            Shader shader = Shader.Find("WinterMarket/SnowCap");
+            if (shader == null)
+            {
+                throw new InvalidOperationException("WinterMarket/SnowCap shader is missing.");
+            }
+
+            string path = $"{MaterialsFolder}/SnowCap.mat";
+            Material material = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (material == null)
+            {
+                material = new Material(shader) { name = "SnowCap" };
+                AssetDatabase.CreateAsset(material, path);
+            }
+            else if (material.shader != shader)
+            {
+                material.shader = shader;
+            }
+
+            material.SetColor("_TopColor", WinterPalette.SnowCap);
+            material.SetColor("_SideColor", WinterPalette.SnowCapShade);
             EditorUtility.SetDirty(material);
         }
 
