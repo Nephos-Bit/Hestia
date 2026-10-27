@@ -204,7 +204,7 @@ namespace WinterMarket.Editor
             EnsureMaterial("CoatOchre", lit, WinterPalette.CoatOchre, 0.02f);
             EnsureMaterial("Metal", lit, new Color(0.22f, 0.25f, 0.27f), 0.26f);
             EnsureMaterial("Cream", lit, new Color(0.91f, 0.87f, 0.8f), 0.03f);
-            EnsureMaterial("DeepGreen", lit, new Color(0.19f, 0.28f, 0.23f), 0.02f);
+            EnsureMaterial("DeepGreen", lit, WinterPalette.ForestFirGreen, 0.02f);
             EnsureMaterial("SnowParticles", particles, new Color(1f, 1f, 1f, 0.75f), 0f);
             EnsureSnowCapMaterial();
             AssetDatabase.SaveAssets();

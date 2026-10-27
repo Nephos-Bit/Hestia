@@ -33,6 +33,7 @@ namespace WinterMarket
         private BuildGridOverlay gridOverlay;
         private RoadPreviewOverlay roadPreview;
         private StructureSafetyOverlay safetyOverlay;
+        private DynamicDeepSnowController deepSnow;
         private DynamicForestController forest;
         private bool configured;
         private bool buildMode;
@@ -75,6 +76,7 @@ namespace WinterMarket
             layoutRoot = new GameObject("Gestaltbarer Markt").transform;
             layoutRoot.SetParent(controller != null ? controller.WorldRoot : transform, false);
             safetyOverlay = StructureSafetyOverlay.Create(layoutRoot);
+            deepSnow = new DynamicDeepSnowController(layoutRoot, scene.Palette);
             forest = new DynamicForestController(layoutRoot, scene.Palette, scene.SnowCapMaterial);
             layout = BuildLayoutStore.LoadOrDefault();
             // Persist migrations and coordinate normalization before any object is rendered.
@@ -201,7 +203,13 @@ namespace WinterMarket
             selectedDefinition = BuildObjectLibrary.Get(type);
             PlacedBuildObjectData data = NewEntry(selectedDefinition, Snap(worldPosition));
             data.rotation = ((rotation % 4) + 4) % 4;
-            preview = BuildObjectVisual.Create(data, scene.Palette, layoutRoot, true, scene.SnowCapMaterial);
+            preview = BuildObjectVisual.Create(
+                data,
+                scene.Palette,
+                layoutRoot,
+                true,
+                scene.SnowCapMaterial,
+                BuildFenceJoins(data, null));
             ValidatePreview();
         }
 
@@ -257,7 +265,13 @@ namespace WinterMarket
             Vector3 center = GetDefaultPreviewPosition();
             PlacedBuildObjectData data = NewEntry(definition, center);
             SnapStructureToPath(data);
-            preview = BuildObjectVisual.Create(data, scene.Palette, layoutRoot, true, scene.SnowCapMaterial);
+            preview = BuildObjectVisual.Create(
+                data,
+                scene.Palette,
+                layoutRoot,
+                true,
+                scene.SnowCapMaterial,
+                BuildFenceJoins(data, null));
             ValidatePreview();
         }
 
@@ -266,7 +280,14 @@ namespace WinterMarket
             if (target == null || target.Data == null) return;
             selectedDefinition = target.Definition;
             original = target.Data.Clone();
-            preview = BuildObjectVisual.Create(target.Data.Clone(), scene.Palette, layoutRoot, true, scene.SnowCapMaterial);
+            PlacedBuildObjectData previewData = target.Data.Clone();
+            preview = BuildObjectVisual.Create(
+                previewData,
+                scene.Palette,
+                layoutRoot,
+                true,
+                scene.SnowCapMaterial,
+                BuildFenceJoins(previewData, target.Data.id));
             ValidatePreview();
         }
 
@@ -536,10 +557,17 @@ namespace WinterMarket
             {
                 PlacedBuildObjectData data = layout.objects[i];
                 if (data == null || string.IsNullOrEmpty(data.id)) continue;
-                MarketBuildObject visual = BuildObjectVisual.Create(data, scene.Palette, layoutRoot, false, scene.SnowCapMaterial);
+                MarketBuildObject visual = BuildObjectVisual.Create(
+                    data,
+                    scene.Palette,
+                    layoutRoot,
+                    false,
+                    scene.SnowCapMaterial,
+                    BuildFenceJoins(data, data.id));
                 instances[data.id] = visual;
                 AddToOccupation(data);
             }
+            deepSnow?.Rebuild(layout);
             forest?.Rebuild(layout);
             RefreshLighting();
             RefreshNavigation();
@@ -1058,6 +1086,46 @@ namespace WinterMarket
             }
         }
 
+        private IReadOnlyList<FenceJoin> BuildFenceJoins(PlacedBuildObjectData fence, string ignoredId)
+        {
+            if (fence == null || fence.type != BuildObjectType.Fence) return null;
+
+            var joins = new List<FenceJoin>(4);
+            Vector2Int[] directions =
+            {
+                Vector2Int.right,
+                Vector2Int.up,
+                Vector2Int.left,
+                Vector2Int.down
+            };
+            foreach (Vector2Int cell in EnumerateCells(fence))
+            {
+                for (int directionIndex = 0; directionIndex < directions.Length; directionIndex++)
+                {
+                    Vector2Int direction = directions[directionIndex];
+                    if (HasFenceAt(cell + direction, ignoredId))
+                    {
+                        joins.Add(new FenceJoin(cell, direction));
+                    }
+                }
+            }
+            return joins;
+        }
+
+        private bool HasFenceAt(Vector2Int cell, string ignoredId)
+        {
+            for (int index = 0; index < layout.objects.Count; index++)
+            {
+                PlacedBuildObjectData candidate = layout.objects[index];
+                if (candidate == null || candidate.id == ignoredId || candidate.type != BuildObjectType.Fence) continue;
+                foreach (Vector2Int candidateCell in EnumerateCells(candidate))
+                {
+                    if (candidateCell == cell) return true;
+                }
+            }
+            return false;
+        }
+
         private PlacedBuildObjectData NewEntry(BuildObjectDefinition definition, Vector3 position)
         {
             return new PlacedBuildObjectData
@@ -1409,14 +1477,16 @@ namespace WinterMarket
     /// </summary>
     internal sealed class DynamicForestController
     {
-        // This landscaped zone is intentionally smaller than the construction limits: it
-        // frames the market densely without turning the entire 144 m snowfield into a wall.
-        private const int MinX = -60;
-        private const int MaxX = 60;
-        private const int MinZ = -48;
-        private const int MaxZ = 56;
-        private const int TreeStepCells = 5;
-        private const int MaxTreeCount = 118;
+        // The vegetation spans the complete 144 x 144 m construction field. It remains
+        // decorative, so any cell is still buildable and a placed object clears its own space.
+        private const int MinX = -120;
+        private const int MaxX = 120;
+        private const int MinZ = -120;
+        private const int MaxZ = 120;
+        // One cell only prevents duplicate roots. Crowns are intentionally allowed to overlap
+        // so the landscape reads as a proper dense forest instead of an orchard.
+        private const int TreeStepCells = 1;
+        private const int MaxTreeCount = 3000;
 
         private readonly Transform root;
         private readonly Material[] palette;
@@ -1438,7 +1508,7 @@ namespace WinterMarket
 
             var placed = new List<Vector2Int>(MaxTreeCount);
             uint state = 0x4e554a79u;
-            const int attempts = 2800;
+            const int attempts = 50000;
             for (int attempt = 0; attempt < attempts && trees.Count < MaxTreeCount; attempt++)
             {
                 int x = RandomRange(ref state, MinX, MaxX);
@@ -1471,12 +1541,16 @@ namespace WinterMarket
                 type = BuildObjectType.SmallFir,
                 x = cell.x * BuildModeController.GridSize,
                 z = cell.y * BuildModeController.GridSize,
-                rotation = StableHash(cell) & 3
+                rotation = StableHash(cell) & 3,
+                variant = BuildObjectVisual.GeneratedForestVariant
             };
             MarketBuildObject tree = BuildObjectVisual.Create(data, palette, root, false, snowCapMaterial);
             tree.name = "Generierter Waldbaum";
-            float scale = 0.82f + (StableHash(cell + new Vector2Int(17, 31)) % 39) * 0.01f;
-            tree.transform.localScale = Vector3.one * scale;
+            // Sink roots into the raised snow while leaving the first trunk section visible.
+            tree.transform.localPosition += Vector3.up * (VoxelVolume.GridSize * 2f);
+            float widthScale = 0.78f + (StableHash(cell + new Vector2Int(17, 31)) % 43) * 0.01f;
+            float heightScale = 0.78f + (StableHash(cell + new Vector2Int(43, 11)) % 78) * 0.01f;
+            tree.transform.localScale = new Vector3(widthScale, heightScale, widthScale);
             BoxCollider collider = tree.GetComponent<BoxCollider>();
             if (collider != null) collider.enabled = false;
             trees.Add(tree);
@@ -1554,6 +1628,118 @@ namespace WinterMarket
             {
                 int hash = cell.x * 73856093 ^ cell.y * 19349663;
                 return hash == int.MinValue ? 0 : Mathf.Abs(hash);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Raised snow outside the cleared two-cell perimeter of structures and roads. It remains
+    /// non-persistent and is regenerated with the editable layout, just like the forest.
+    /// </summary>
+    internal sealed class DynamicDeepSnowController
+    {
+        private const int MinX = -120;
+        private const int MaxX = 120;
+        private const int MinZ = -120;
+        private const int MaxZ = 120;
+        private const int ClearanceCells = 2;
+        private const int VoxelsPerBuildCell = 4;
+        private const int SnowHeightVoxels = 2;
+
+        private readonly Transform root;
+        private readonly Material[] palette;
+        private VoxelAssetGenerator surface;
+
+        public DynamicDeepSnowController(Transform parent, Material[] sourcePalette)
+        {
+            root = new GameObject("Tiefschnee").transform;
+            root.SetParent(parent, false);
+            palette = sourcePalette;
+        }
+
+        public void Rebuild(BuildLayoutData layout)
+        {
+            Clear();
+            if (layout == null || root == null) return;
+
+            int cellWidth = MaxX - MinX + 1;
+            int cellDepth = MaxZ - MinZ + 1;
+            var snow = new VoxelVolume(new Vector3Int(
+                cellWidth * VoxelsPerBuildCell,
+                SnowHeightVoxels,
+                cellDepth * VoxelsPerBuildCell));
+
+            for (int z = MinZ; z <= MaxZ; z++)
+            {
+                for (int x = MinX; x <= MaxX; x++)
+                {
+                    var cell = new Vector2Int(x, z);
+                    if (!IsDeepSnowCell(cell, layout)) continue;
+                    int localX = (x - MinX) * VoxelsPerBuildCell;
+                    int localZ = (z - MinZ) * VoxelsPerBuildCell;
+                    snow.FillCuboid(
+                        localX,
+                        0,
+                        localZ,
+                        VoxelsPerBuildCell,
+                        SnowHeightVoxels,
+                        VoxelsPerBuildCell,
+                        GetSnowVariation(cell));
+                }
+            }
+
+            surface = VoxelAssetGenerator.Create("Erhöhter Tiefschnee", snow, palette, root, true);
+            surface.transform.localPosition = new Vector3(
+                MinX * BuildModeController.GridSize - BuildModeController.GridSize * 0.5f,
+                0.30f,
+                MinZ * BuildModeController.GridSize - BuildModeController.GridSize * 0.5f);
+            MeshRenderer renderer = surface.GetComponent<MeshRenderer>();
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = true;
+        }
+
+        public void Clear()
+        {
+            if (surface == null) return;
+            surface.gameObject.SetActive(false);
+            UnityEngine.Object.Destroy(surface.gameObject);
+            surface = null;
+        }
+
+        private static bool IsDeepSnowCell(Vector2Int cell, BuildLayoutData layout)
+        {
+            // The permanent main road has the same two-cell cleared shoulder as placed paths.
+            if (cell.y >= -5 - ClearanceCells && cell.y <= -3 + ClearanceCells) return false;
+
+            for (int index = 0; index < layout.objects.Count; index++)
+            {
+                PlacedBuildObjectData item = layout.objects[index];
+                if (item == null) continue;
+                BuildObjectDefinition definition = BuildObjectLibrary.Get(item.type);
+                Vector2Int size = definition.RotatedFootprint(item.rotation);
+                int centerX = Mathf.RoundToInt(item.x / BuildModeController.GridSize);
+                int centerZ = Mathf.RoundToInt(item.z / BuildModeController.GridSize);
+                int minX = centerX - size.x / 2 - ClearanceCells;
+                int maxX = centerX + (size.x - 1) / 2 + ClearanceCells;
+                int minZ = centerZ - size.y / 2 - ClearanceCells;
+                int maxZ = centerZ + (size.y - 1) / 2 + ClearanceCells;
+                if (cell.x >= minX && cell.x <= maxX && cell.y >= minZ && cell.y <= maxZ)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static VoxelMaterialSlot GetSnowVariation(Vector2Int cell)
+        {
+            // The three-cell patches keep the tonal variation organic rather than checkerboard-like.
+            int patchX = Mathf.FloorToInt(cell.x / 3f);
+            int patchZ = Mathf.FloorToInt(cell.y / 3f);
+            unchecked
+            {
+                int hash = patchX * 92837111 ^ patchZ * 689287499;
+                return (hash & 7) == 0 ? VoxelMaterialSlot.Slot1 : VoxelMaterialSlot.Slot0;
             }
         }
     }

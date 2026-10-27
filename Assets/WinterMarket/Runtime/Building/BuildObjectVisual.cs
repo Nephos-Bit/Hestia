@@ -5,6 +5,19 @@ using UnityEngine.Rendering;
 
 namespace WinterMarket
 {
+    /// <summary>A single grid-edge contact between two separate fence placements.</summary>
+    public struct FenceJoin
+    {
+        public readonly Vector2Int Cell;
+        public readonly Vector2Int Direction;
+
+        public FenceJoin(Vector2Int cell, Vector2Int direction)
+        {
+            Cell = cell;
+            Direction = direction;
+        }
+    }
+
     [DisallowMultipleComponent]
     public sealed class MarketBuildObject : MonoBehaviour
     {
@@ -47,13 +60,15 @@ namespace WinterMarket
     public static class BuildObjectVisual
     {
         private const float Voxel = VoxelVolume.GridSize;
+        public const string GeneratedForestVariant = "generated-forest";
 
         public static MarketBuildObject Create(
             PlacedBuildObjectData data,
             Material[] sourcePalette,
             Transform parent,
             bool preview = false,
-            Material snowCapMaterial = null)
+            Material snowCapMaterial = null,
+            IReadOnlyList<FenceJoin> fenceJoins = null)
         {
             BuildObjectDefinition definition = BuildObjectLibrary.Get(data.type);
             Material[] palette = preview ? CreatePreviewPalette(sourcePalette) : sourcePalette;
@@ -77,7 +92,12 @@ namespace WinterMarket
                     CreateStall(result, palette, VoxelMaterialSlot.Slot4, "Kakao", true, false, snowCapMaterial);
                     break;
                 case BuildObjectType.SmallFir:
-                    CreateFir(result, palette, false, snowCapMaterial);
+                    CreateFir(
+                        result,
+                        palette,
+                        false,
+                        snowCapMaterial,
+                        data.variant == GeneratedForestVariant);
                     break;
                 case BuildObjectType.Snowman:
                     CreateSnowman(result, palette);
@@ -95,7 +115,7 @@ namespace WinterMarket
                     CreateCrates(result, palette);
                     break;
                 case BuildObjectType.Fence:
-                    CreateFence(result, palette);
+                    CreateFence(result, palette, fenceJoins);
                     break;
                 case BuildObjectType.StringLights:
                     CreateStringLights(result, palette);
@@ -165,7 +185,8 @@ namespace WinterMarket
             MarketBuildObject result,
             Material[] palette,
             bool decorated,
-            Material snowCapMaterial)
+            Material snowCapMaterial,
+            bool forestSnow = false)
         {
             if (decorated)
             {
@@ -183,9 +204,16 @@ namespace WinterMarket
             {
                 int radius = Mathf.Max(1, (levels - i + 1) / 2);
                 int side = radius * 2 + 1;
-                int y = (decorated ? 5 : 4) + i;
-                tree.FillCuboid(center - radius, y, center - radius, side, 1, side, VoxelMaterialSlot.Slot5);
-                if (i % 2 == 0 && radius > 1)
+                int y = forestSnow ? 4 + i * 2 : (decorated ? 5 : 4) + i;
+                VoxelMaterialSlot foliage = forestSnow ? VoxelMaterialSlot.Slot15 : VoxelMaterialSlot.Slot5;
+                tree.FillCuboid(center - radius, y, center - radius, side, 1, side, foliage);
+                if (forestSnow)
+                {
+                    // A complete, thin cap on each branch tier gives the distant forest a
+                    // clear snow-covered silhouette without a second renderer per tree.
+                    tree.FillCuboid(center - radius, y + 1, center - radius, side, 1, side, VoxelMaterialSlot.Slot0);
+                }
+                else if (i % 2 == 0 && radius > 1)
                 {
                     tree.FillCuboid(center - radius, y + 1, center - radius, side, 1, 1, VoxelMaterialSlot.Slot0);
                     tree.FillCuboid(center - radius, y + 1, center + radius, side, 1, 1, VoxelMaterialSlot.Slot0);
@@ -423,14 +451,65 @@ namespace WinterMarket
             volume.FillCuboid(x, y + 2, z, 7, 1, 1, VoxelMaterialSlot.Slot3);
         }
 
-        private static void CreateFence(MarketBuildObject result, Material[] palette)
+        private static void CreateFence(
+            MarketBuildObject result,
+            Material[] palette,
+            IReadOnlyList<FenceJoin> joins)
         {
-            var fence = new VoxelVolume(new Vector3Int(9, 8, 2));
-            fence.FillCuboid(0, 4, 0, 9, 2, 1, VoxelMaterialSlot.Slot2);
-            fence.FillCuboid(0, 0, 0, 1, 8, 2, VoxelMaterialSlot.Slot3);
-            fence.FillCuboid(4, 0, 0, 1, 8, 2, VoxelMaterialSlot.Slot3);
-            fence.FillCuboid(8, 0, 0, 1, 8, 2, VoxelMaterialSlot.Slot3);
+            // Match the complete 3 x 1 construction footprint (1.80 x 0.60 m).  The old
+            // 1.35 x 0.30 m model left visible snow gaps between otherwise adjacent fences.
+            const int length = 12;
+            const int depth = 4;
+            const int height = 8;
+            var fence = new VoxelVolume(new Vector3Int(length, height, depth));
+            fence.FillCuboid(0, 2, 1, length, 2, 2, VoxelMaterialSlot.Slot2);
+            fence.FillCuboid(0, 5, 1, length, 1, 2, VoxelMaterialSlot.Slot2);
+            AddFencePost(fence, 0, height);
+            AddFencePost(fence, length / 2 - 1, height);
+            AddFencePost(fence, length - 1, height);
+            AddFenceCornerJoins(fence, result.transform, joins, length, depth, height);
             AddVolume(result, "Zaunelement", fence, palette, Vector3.zero);
+        }
+
+        private static void AddFencePost(VoxelVolume fence, int x, int height)
+        {
+            fence.FillCuboid(Mathf.Clamp(x, 0, fence.Width - 1), 0, 1, 1, height, 2, VoxelMaterialSlot.Slot3);
+        }
+
+        private static void AddFenceCornerJoins(
+            VoxelVolume fence,
+            Transform fenceTransform,
+            IReadOnlyList<FenceJoin> joins,
+            int length,
+            int depth,
+            int height)
+        {
+            if (joins == null) return;
+
+            for (int index = 0; index < joins.Count; index++)
+            {
+                FenceJoin join = joins[index];
+                Vector3 worldCell = new Vector3(
+                    join.Cell.x * BuildModeController.GridSize,
+                    0f,
+                    join.Cell.y * BuildModeController.GridSize);
+                Vector3 localCell = fenceTransform.InverseTransformPoint(worldCell);
+                Vector3 localDirection = Quaternion.Inverse(fenceTransform.rotation) *
+                    new Vector3(join.Direction.x, 0f, join.Direction.y);
+
+                // End-to-end rails already meet because the base mesh spans the complete
+                // footprint. Only sideways contacts need a short branch at their exact cell,
+                // so L and T corners become one continuous fence rather than two touching props.
+                if (Mathf.Abs(localDirection.x) >= Mathf.Abs(localDirection.z)) continue;
+
+                int centerX = Mathf.RoundToInt((localCell.x + length * Voxel * 0.5f) / Voxel);
+                int postX = Mathf.Clamp(centerX - 1, 0, length - 2);
+                int railX = Mathf.Clamp(centerX - 1, 0, length - 2);
+                int railZ = localDirection.z > 0f ? depth / 2 : 0;
+                fence.FillCuboid(railX, 2, railZ, 2, 2, depth / 2, VoxelMaterialSlot.Slot2);
+                fence.FillCuboid(railX, 5, railZ, 2, 1, depth / 2, VoxelMaterialSlot.Slot2);
+                fence.FillCuboid(postX, 0, 1, 2, height, 2, VoxelMaterialSlot.Slot3);
+            }
         }
 
         private static void CreateStringLights(MarketBuildObject result, Material[] palette)

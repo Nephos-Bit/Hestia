@@ -26,7 +26,7 @@ namespace WinterMarket
             palette[12] = LoadOrCreate("CoatOchre", "Coat Ochre", lit, WinterPalette.CoatOchre, 0.02f);
             palette[13] = LoadOrCreate("Metal", "Metal", lit, new Color(0.22f, 0.25f, 0.27f), 0.26f, false, 0.28f);
             palette[14] = LoadOrCreate("Cream", "Cream", lit, new Color(0.91f, 0.87f, 0.8f), 0.03f);
-            palette[15] = LoadOrCreate("DeepGreen", "Deep Green", lit, new Color(0.19f, 0.28f, 0.23f), 0.02f);
+            palette[15] = LoadOrCreate("DeepGreen", "Forest Fir Green", lit, WinterPalette.ForestFirGreen, 0.02f);
             return palette;
         }
 
