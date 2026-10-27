@@ -12,6 +12,7 @@ namespace WinterMarket
         [SerializeField, Min(1f)] private float minimumOrthographicSize = 12f;
         [SerializeField, Min(1f)] private float maximumOrthographicSize = 42f;
         [SerializeField, Min(1f)] private float panLimit = 68f;
+        [SerializeField, Min(0f)] private float groundClearance = 0.75f;
 
         private Camera cachedCamera;
         private int lastWidth;
@@ -62,6 +63,29 @@ namespace WinterMarket
                 referenceOrthographicSize * protectedScale * zoomMultiplier,
                 minimumOrthographicSize,
                 maximumOrthographicSize);
+            KeepFrustumAboveGround();
+        }
+
+        // In an orthographic camera the lower edge moves down with the zoom level. At the
+        // former maximum size it crossed y = 0, so its lower rays began below the snow and
+        // could never hit it. Raise the camera along its viewing axis while retaining the
+        // current centre point on the ground.
+        private void KeepFrustumAboveGround()
+        {
+            float downward = -transform.forward.y;
+            if (downward <= 0.001f) return;
+
+            float requiredHeight = groundClearance
+                + cachedCamera.orthographicSize * Mathf.Abs(transform.up.y)
+                + cachedCamera.nearClipPlane * downward;
+            if (transform.position.y >= requiredHeight) return;
+
+            Ray centerRay = cachedCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+            var ground = new Plane(Vector3.up, Vector3.zero);
+            if (!ground.Raycast(centerRay, out float distance)) return;
+
+            Vector3 focus = centerRay.GetPoint(distance);
+            transform.position = focus - transform.forward * (requiredHeight / downward);
         }
 
         private void HandleNavigation()

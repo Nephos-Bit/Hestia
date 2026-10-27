@@ -10,6 +10,9 @@ namespace WinterMarket
     public sealed class SceneController : MonoBehaviour
     {
         private const float Grid = VoxelVolume.GridSize;
+        // The player may pan 68 m in each direction and zoom out to 42 m.  This leaves
+        // enough continuous snow around the 144 x 144 m build area for every camera view.
+        private const float SnowfieldHalfExtent = 300f;
 
         private Material[] palette;
         private Material snowParticleMaterial;
@@ -78,28 +81,12 @@ namespace WinterMarket
             ground.SetVoxel(0, 0, 0, VoxelMaterialSlot.Slot0);
             VoxelAssetGenerator groundAsset =
                 VoxelAssetGenerator.Create("Endlose Schneefläche", ground, palette, worldRoot, true);
-            groundAsset.transform.position = new Vector3(-75f, 0f, -75f);
-            groundAsset.transform.localScale = new Vector3(1000f, 2f, 1000f);
+            float snowfieldScale = SnowfieldHalfExtent * 2f / Grid;
+            groundAsset.transform.position = new Vector3(-SnowfieldHalfExtent, 0f, -SnowfieldHalfExtent);
+            groundAsset.transform.localScale = new Vector3(snowfieldScale, 2f, snowfieldScale);
             var groundRenderer = groundAsset.GetComponent<MeshRenderer>();
             groundRenderer.shadowCastingMode = ShadowCastingMode.Off;
             groundRenderer.receiveShadows = true;
-
-            // With the original camera angle, the lowest orthographic rays pass below the
-            // visible snow plane. This lower, same-colour underlay closes that gap without
-            // changing camera position or rotation.
-            var underlay = new VoxelVolume(Vector3Int.one);
-            underlay.SetVoxel(0, 0, 0, VoxelMaterialSlot.Slot0);
-            VoxelAssetGenerator underlayAsset = VoxelAssetGenerator.Create(
-                "Schneeunterlage unter Kamerarand",
-                underlay,
-                palette,
-                worldRoot,
-                true);
-            underlayAsset.transform.position = new Vector3(-300f, -15f, -300f);
-            underlayAsset.transform.localScale = new Vector3(4000f, 2f, 4000f);
-            MeshRenderer underlayRenderer = underlayAsset.GetComponent<MeshRenderer>();
-            underlayRenderer.shadowCastingMode = ShadowCastingMode.Off;
-            underlayRenderer.receiveShadows = false;
 
             // The public main road is three construction cells wide. It is intentionally
             // axis-aligned and uses the same cleared-snow material as roads the player draws.
@@ -481,7 +468,7 @@ namespace WinterMarket
             DioramaCamera.clearFlags = CameraClearFlags.SolidColor;
             DioramaCamera.backgroundColor = WinterPalette.Background;
             DioramaCamera.nearClipPlane = 0.1f;
-            DioramaCamera.farClipPlane = 180f;
+            DioramaCamera.farClipPlane = 500f;
             DioramaCamera.allowHDR = true;
             DioramaCamera.allowMSAA = true;
             cameraObject.AddComponent<AudioListener>();
@@ -500,7 +487,7 @@ namespace WinterMarket
             Lighting.Configure(TimeOfDay, sunlight, warmLights.ToArray(), warmRenderers.ToArray(), DioramaCamera);
 
             Ambient = gameObject.AddComponent<AmbientController>();
-            Ambient.BuildRuntimeAtmosphere(snowParticleMaterial);
+            Ambient.BuildRuntimeAtmosphere(snowParticleMaterial, DioramaCamera);
             Ambient.ApplyQuality(Quality.CurrentQuality == QualityLevel.High);
             ApplyLightingQuality(Quality.CurrentQuality);
             Quality.QualityChanged += level =>

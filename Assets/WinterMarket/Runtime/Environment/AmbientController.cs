@@ -13,9 +13,11 @@ namespace WinterMarket
         [SerializeField, Range(0f, 1f)] private float windVolume = 0.075f;
 
         private AudioClip[] footsteps;
+        private Camera dioramaCamera;
 
-        public void BuildRuntimeAtmosphere(Material snowMaterial)
+        public void BuildRuntimeAtmosphere(Material snowMaterial, Camera camera = null)
         {
+            dioramaCamera = camera != null ? camera : Camera.main;
             if (snowLayers.Length == 0)
             {
                 snowLayers = new ParticleSystem[3];
@@ -24,7 +26,13 @@ namespace WinterMarket
                 snowLayers[2] = CreateSnowLayer("Snow Far", 65, 0.03f, 0.38f, new Vector3(19f, 9f, 16f), snowMaterial);
             }
 
+            UpdateSnowCoverage();
             BuildAudio();
+        }
+
+        private void LateUpdate()
+        {
+            UpdateSnowCoverage();
         }
 
         public void ApplyQuality(bool high)
@@ -106,6 +114,40 @@ namespace WinterMarket
             renderer.material = material;
             particles.Play();
             return particles;
+        }
+
+        // Particle systems simulate in world space, but their emitters follow the current
+        // ground focus. This keeps snowfall over the complete visible map after panning or
+        // zooming, while already emitted flakes continue their natural fall.
+        private void UpdateSnowCoverage()
+        {
+            if (dioramaCamera == null)
+            {
+                dioramaCamera = Camera.main;
+            }
+            if (dioramaCamera == null || !dioramaCamera.orthographic || snowLayers == null)
+            {
+                return;
+            }
+
+            Ray centerRay = dioramaCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+            var ground = new Plane(Vector3.up, Vector3.zero);
+            if (!ground.Raycast(centerRay, out float distance))
+            {
+                return;
+            }
+
+            Vector3 center = centerRay.GetPoint(distance);
+            float coverage = Mathf.Max(44f, dioramaCamera.orthographicSize * 4.25f);
+            for (int i = 0; i < snowLayers.Length; i++)
+            {
+                ParticleSystem layer = snowLayers[i];
+                if (layer == null) continue;
+
+                layer.transform.position = new Vector3(center.x, 10f + i * 1.5f, center.z);
+                ParticleSystem.ShapeModule shape = layer.shape;
+                shape.scale = new Vector3(coverage, 12f, coverage);
+            }
         }
 
         private void BuildAudio()

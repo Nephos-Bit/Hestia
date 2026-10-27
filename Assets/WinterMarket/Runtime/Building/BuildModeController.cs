@@ -11,10 +11,10 @@ namespace WinterMarket
         private const int HistoryLimit = 40;
         // The whole visible snowfield remains constructible. Coordinates are grid-aligned,
         // while generated trees stay decorative and are never treated as occupied build cells.
-        private const float BuildMinX = -72f;
-        private const float BuildMaxX = 72f;
-        private const float BuildMinZ = -72f;
-        private const float BuildMaxZ = 72f;
+        internal const float BuildMinX = -72f;
+        internal const float BuildMaxX = 72f;
+        internal const float BuildMinZ = -72f;
+        internal const float BuildMaxZ = 72f;
         private const int RoadHalfWidthCells = 1;
         private const int PathSnapRangeCells = 4;
 
@@ -1477,8 +1477,8 @@ namespace WinterMarket
     /// </summary>
     internal sealed class DynamicForestController
     {
-        // The vegetation spans the complete 144 x 144 m construction field. It remains
-        // decorative, so any cell is still buildable and a placed object clears its own space.
+        // The forest frames the central market and remains decorative, so a placed object
+        // simply clears its own space on the next layout refresh.
         private const int MinX = -120;
         private const int MaxX = 120;
         private const int MinZ = -120;
@@ -1638,10 +1638,10 @@ namespace WinterMarket
     /// </summary>
     internal sealed class DynamicDeepSnowController
     {
-        private const int MinX = -120;
-        private const int MaxX = 120;
-        private const int MinZ = -120;
-        private const int MaxZ = 120;
+        private static readonly int MinX = Mathf.RoundToInt(BuildModeController.BuildMinX / BuildModeController.GridSize);
+        private static readonly int MaxX = Mathf.RoundToInt(BuildModeController.BuildMaxX / BuildModeController.GridSize);
+        private static readonly int MinZ = Mathf.RoundToInt(BuildModeController.BuildMinZ / BuildModeController.GridSize);
+        private static readonly int MaxZ = Mathf.RoundToInt(BuildModeController.BuildMaxZ / BuildModeController.GridSize);
         private const int ClearanceCells = 2;
         private const int VoxelsPerBuildCell = 4;
         private const int SnowHeightVoxels = 2;
@@ -1664,10 +1664,10 @@ namespace WinterMarket
 
             int cellWidth = MaxX - MinX + 1;
             int cellDepth = MaxZ - MinZ + 1;
-            var snow = new VoxelVolume(new Vector3Int(
-                cellWidth * VoxelsPerBuildCell,
-                SnowHeightVoxels,
-                cellDepth * VoxelsPerBuildCell));
+            // Horizontal transform scaling maps one compact voxel to one 0.60 m build cell.
+            // It gives the full build area a continuous deep-snow mesh without allocating a
+            // 29-million-voxel volume just to repeat the same four-by-four cell pattern.
+            var snow = new VoxelVolume(new Vector3Int(cellWidth, SnowHeightVoxels, cellDepth));
 
             for (int z = MinZ; z <= MaxZ; z++)
             {
@@ -1675,15 +1675,15 @@ namespace WinterMarket
                 {
                     var cell = new Vector2Int(x, z);
                     if (!IsDeepSnowCell(cell, layout)) continue;
-                    int localX = (x - MinX) * VoxelsPerBuildCell;
-                    int localZ = (z - MinZ) * VoxelsPerBuildCell;
+                    int localX = x - MinX;
+                    int localZ = z - MinZ;
                     snow.FillCuboid(
                         localX,
                         0,
                         localZ,
-                        VoxelsPerBuildCell,
+                        1,
                         SnowHeightVoxels,
-                        VoxelsPerBuildCell,
+                        1,
                         GetSnowVariation(cell));
                 }
             }
@@ -1693,6 +1693,7 @@ namespace WinterMarket
                 MinX * BuildModeController.GridSize - BuildModeController.GridSize * 0.5f,
                 0.30f,
                 MinZ * BuildModeController.GridSize - BuildModeController.GridSize * 0.5f);
+            surface.transform.localScale = new Vector3(VoxelsPerBuildCell, 1f, VoxelsPerBuildCell);
             MeshRenderer renderer = surface.GetComponent<MeshRenderer>();
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = true;
