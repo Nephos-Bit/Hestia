@@ -52,6 +52,11 @@ namespace WinterMarket
         private bool hasRoadPreviewEnd;
         private Vector3 roadPreviewEnd;
         private readonly List<Vector2Int> roadPreviewCells = new List<Vector2Int>();
+        private bool deleteToolActive;
+        private PlacedBuildObjectData deleteStructureSelection;
+        private readonly HashSet<Vector2Int> deleteRoadSelection = new HashSet<Vector2Int>();
+        private MarketBuildObject deleteGhost;
+        private string deleteMessage;
 
         public bool IsBuildMode => buildMode;
         public bool HasPreview => preview != null;
@@ -95,6 +100,13 @@ namespace WinterMarket
                 {
                     buildButtonVisible = false;
                 }
+                return;
+            }
+
+            if (deleteToolActive)
+            {
+                if (!pointerDown || IsOverBuildUi(pointer) || !TryGetGroundPoint(pointer, out Vector3 deletePoint)) return;
+                HandleDeleteClick(pointer, Snap(deletePoint));
                 return;
             }
 
@@ -160,6 +172,7 @@ namespace WinterMarket
         {
             if (!buildMode) return;
             CancelPreview();
+            ExitDeleteTool();
             buildMode = false;
             buildButtonVisible = false;
             SetGridVisible(false);
@@ -230,6 +243,7 @@ namespace WinterMarket
 
         private void BeginNew(BuildObjectDefinition definition)
         {
+            ExitDeleteTool();
             CancelPreview();
             selectedDefinition = definition;
             original = null;
@@ -336,6 +350,176 @@ namespace WinterMarket
             CancelPreview();
             RebuildLayout();
             SaveLayout();
+        }
+
+        private void ToggleDeleteTool()
+        {
+            if (deleteToolActive)
+            {
+                ExitDeleteTool();
+                return;
+            }
+            CancelPreview();
+            deleteToolActive = true;
+            deleteMessage = "Struktur oder Straße auswählen";
+        }
+
+        private void ExitDeleteTool()
+        {
+            deleteToolActive = false;
+            ClearDeleteSelection();
+        }
+
+        private void HandleDeleteClick(Vector2 screenPoint, Vector3 groundPoint)
+        {
+            MarketBuildObject hit = null;
+            Ray ray = dioramaCamera.ScreenPointToRay(screenPoint);
+            if (Physics.Raycast(ray, out RaycastHit raycastHit, 60f))
+            {
+                hit = raycastHit.collider.GetComponent<MarketBuildObject>();
+            }
+
+            if (hit != null && hit.Data != null && hit.Data.type != BuildObjectType.PathTile)
+            {
+                if (deleteStructureSelection != null && hit.Data.id == deleteStructureSelection.id)
+                {
+                    DeleteStructureSelection();
+                }
+                else
+                {
+                    SelectStructureForDeletion(hit.Data);
+                }
+                return;
+            }
+
+            Vector2Int cell = new Vector2Int(
+                Mathf.RoundToInt(groundPoint.x / GridSize),
+                Mathf.RoundToInt(groundPoint.z / GridSize));
+            if (deleteRoadSelection.Count > 0 && deleteRoadSelection.Contains(cell))
+            {
+                DeleteRoadSelection();
+                return;
+            }
+            if (pathCells.Contains(cell))
+            {
+                SelectRoadForDeletion(cell);
+                return;
+            }
+
+            ClearDeleteSelection();
+            deleteMessage = "Struktur oder platzierte Straße auswählen";
+        }
+
+        private void SelectStructureForDeletion(PlacedBuildObjectData data)
+        {
+            ClearDeleteSelection();
+            deleteStructureSelection = data.Clone();
+            deleteGhost = BuildObjectVisual.Create(
+                deleteStructureSelection.Clone(), scene.Palette, layoutRoot, true, scene.SnowCapMaterial);
+            TintDeleteGhost(deleteGhost);
+            var zone = new HashSet<Vector2Int>();
+            AddSafetyCells(deleteStructureSelection, zone);
+            safetyOverlay?.SetZones(Array.Empty<Vector2Int>(), zone);
+            deleteMessage = "Auswahl rot markiert – erneut auf die Struktur klicken zum Löschen";
+        }
+
+        private void SelectRoadForDeletion(Vector2Int center)
+        {
+            ClearDeleteSelection();
+            for (int z = -1; z <= 1; z++)
+            {
+                for (int x = -1; x <= 1; x++)
+                {
+                    Vector2Int cell = new Vector2Int(center.x + x, center.y + z);
+                    if (pathCells.Contains(cell)) deleteRoadSelection.Add(cell);
+                }
+            }
+            if (deleteRoadSelection.Count == 0)
+            {
+                deleteMessage = "Dieser Straßenbereich kann nicht gelöscht werden";
+                return;
+            }
+            EnsureRoadPreview();
+            roadPreview.SetCells(new List<Vector2Int>(deleteRoadSelection), false);
+            deleteMessage = "3×3 Straßenblock rot markiert – erneut in den Bereich klicken zum Löschen";
+        }
+
+        private void DeleteStructureSelection()
+        {
+            int index = deleteStructureSelection != null ? FindIndex(deleteStructureSelection.id) : -1;
+            if (index < 0)
+            {
+                ClearDeleteSelection();
+                deleteMessage = "Die Struktur ist nicht mehr vorhanden";
+                return;
+            }
+            PlacedBuildObjectData removed = layout.objects[index].Clone();
+            layout.objects.RemoveAt(index);
+            Record(new BuildLayoutAction(removed, null));
+            ClearDeleteSelection();
+            RebuildLayout();
+            SaveLayout();
+            deleteMessage = "Struktur entfernt";
+        }
+
+        private void DeleteRoadSelection()
+        {
+            int removed = 0;
+            for (int index = layout.objects.Count - 1; index >= 0; index--)
+            {
+                PlacedBuildObjectData item = layout.objects[index];
+                if (item == null || item.type != BuildObjectType.PathTile) continue;
+                bool remove = false;
+                foreach (Vector2Int cell in EnumerateCells(item))
+                {
+                    if (!deleteRoadSelection.Contains(cell)) continue;
+                    remove = true;
+                    break;
+                }
+                if (!remove) continue;
+                layout.objects.RemoveAt(index);
+                Record(new BuildLayoutAction(item.Clone(), null));
+                removed++;
+            }
+            ClearDeleteSelection();
+            if (removed > 0)
+            {
+                RebuildLayout();
+                SaveLayout();
+                deleteMessage = "Straßenblock entfernt";
+            }
+            else
+            {
+                deleteMessage = "In diesem Bereich gibt es keine platzierte Straße";
+            }
+        }
+
+        private void ClearDeleteSelection()
+        {
+            if (deleteGhost != null) Destroy(deleteGhost.gameObject);
+            deleteGhost = null;
+            deleteStructureSelection = null;
+            deleteRoadSelection.Clear();
+            safetyOverlay?.Clear();
+            if (roadPreview != null) roadPreview.Clear();
+        }
+
+        private static void TintDeleteGhost(MarketBuildObject ghost)
+        {
+            if (ghost == null) return;
+            Renderer[] renderers = ghost.GetComponentsInChildren<Renderer>();
+            Color tint = new Color(0.96f, 0.18f, 0.16f, 0.56f);
+            for (int index = 0; index < renderers.Length; index++)
+            {
+                Material[] materials = renderers[index].materials;
+                for (int material = 0; material < materials.Length; material++)
+                {
+                    if (materials[material] != null && materials[material].HasProperty("_BaseColor"))
+                    {
+                        materials[material].SetColor("_BaseColor", tint);
+                    }
+                }
+            }
         }
 
         private void RebuildLayout()
@@ -1106,9 +1290,11 @@ namespace WinterMarket
             float touch = 46f * scale;
             Rect header = new Rect(area.x + pad, area.y + pad, area.width - 2f * pad, touch);
             if (GUI.Button(new Rect(header.x, header.y, 78f * scale, header.height), "Fertig")) ExitBuildMode();
-            GUI.enabled = undo.Count > 0 && preview == null;
+            if (GUI.Button(new Rect(header.x + 86f * scale, header.y, 96f * scale, header.height),
+                deleteToolActive ? "Abbruch" : "Löschen")) ToggleDeleteTool();
+            GUI.enabled = undo.Count > 0 && preview == null && !deleteToolActive;
             if (GUI.Button(new Rect(header.xMax - 156f * scale, header.y, 74f * scale, header.height), "Undo")) Undo();
-            GUI.enabled = redo.Count > 0 && preview == null;
+            GUI.enabled = redo.Count > 0 && preview == null && !deleteToolActive;
             if (GUI.Button(new Rect(header.xMax - 76f * scale, header.y, 76f * scale, header.height), "Redo")) Redo();
             GUI.enabled = true;
 
@@ -1120,6 +1306,7 @@ namespace WinterMarket
                 Rect categoryButton = new Rect(area.x + pad + ((int)value * (categoryWidth + 6f * scale)), y, categoryWidth, 40f * scale);
                 if (GUI.Button(categoryButton, label))
                 {
+                    ExitDeleteTool();
                     category = value;
                     palettePage = 0;
                     selectedDefinition = null;
@@ -1127,6 +1314,13 @@ namespace WinterMarket
                 }
             }
             y += 48f * scale;
+
+            if (deleteToolActive)
+            {
+                GUI.Label(new Rect(area.x + pad, y + 12f * scale, area.width - 2f * pad, 54f * scale),
+                    string.IsNullOrEmpty(deleteMessage) ? "Struktur oder Straße auswählen" : deleteMessage);
+                return;
+            }
 
             var categoryEntries = new List<BuildObjectDefinition>();
             foreach (BuildObjectDefinition definition in BuildObjectLibrary.GetCategory(category)) categoryEntries.Add(definition);
