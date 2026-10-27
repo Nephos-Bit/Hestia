@@ -88,7 +88,7 @@ namespace WinterMarket
             new BuildObjectDefinition(BuildObjectType.SmallFir, "Kleine Tanne", BuildCategory.Decoration, new Vector2Int(5, 5)),
             new BuildObjectDefinition(BuildObjectType.Snowman, "Schneemann", BuildCategory.Decoration, new Vector2Int(2, 2), true, false),
             new BuildObjectDefinition(BuildObjectType.Bench, "Holzbank", BuildCategory.Decoration, new Vector2Int(6, 2), true, false, BuildInterest.Rest),
-            new BuildObjectDefinition(BuildObjectType.Lantern, "Laterne", BuildCategory.Decoration, new Vector2Int(2, 2), true, true, BuildInterest.None, true),
+            new BuildObjectDefinition(BuildObjectType.Lantern, "Laterne", BuildCategory.Decoration, new Vector2Int(2, 2), false, true, BuildInterest.None, true),
             new BuildObjectDefinition(BuildObjectType.FireBowl, "Feuerkorb", BuildCategory.Decoration, new Vector2Int(2, 2), true, false, BuildInterest.Warmth, true),
             new BuildObjectDefinition(BuildObjectType.Crates, "Holzkisten", BuildCategory.Decoration, new Vector2Int(5, 3)),
             new BuildObjectDefinition(BuildObjectType.Fence, "Zaunelement", BuildCategory.Decoration, new Vector2Int(3, 1)),

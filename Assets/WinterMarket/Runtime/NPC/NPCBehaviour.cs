@@ -41,6 +41,9 @@ namespace WinterMarket
         private int routeDirection;
         private bool hasSingleTarget;
         private Vector3 singleTarget;
+        private readonly List<Vector3> roadRoute = new List<Vector3>(64);
+        private int roadRouteIndex;
+        private bool hasRoadRoute;
         private float moveSpeed;
         private float stateEndsAt;
         private float walkCycle;
@@ -109,6 +112,8 @@ namespace WinterMarket
             activityRoute = null;
             currentRoute = null;
             hasSingleTarget = false;
+            hasRoadRoute = false;
+            roadRoute.Clear();
             hasObstacleDetour = false;
             navigationRevision = navigation != null ? navigation.NavigationRevision : -1;
             guardian = null;
@@ -181,6 +186,8 @@ namespace WinterMarket
             currentRoute = null;
             activityRoute = null;
             hasSingleTarget = false;
+            hasRoadRoute = false;
+            roadRoute.Clear();
             hasObstacleDetour = false;
             guardian = null;
             SetCarryingCrate(false);
@@ -310,6 +317,8 @@ namespace WinterMarket
         {
             state = movingState;
             hasSingleTarget = false;
+            hasRoadRoute = false;
+            roadRoute.Clear();
             hasObstacleDetour = false;
             currentRoute = preferredRoute;
 
@@ -323,6 +332,13 @@ namespace WinterMarket
                 int count = pathSystem.GetRouteWaypointCount(currentRoute);
                 if (count > 0)
                 {
+                    if (pathSystem.TryGetRouteWaypoint(currentRoute, count - 1, out Vector3 destination) &&
+                        pathSystem.TryBuildRoadRoute(transform.position, destination, roadRoute))
+                    {
+                        hasRoadRoute = true;
+                        roadRouteIndex = 0;
+                        return;
+                    }
                     SelectRouteStart(count);
                     return;
                 }
@@ -382,6 +398,11 @@ namespace WinterMarket
                     transform.position,
                     0.24f);
                 hasObstacleDetour = false;
+                if (hasRoadRoute)
+                {
+                    BeginMoving(state, currentRoute);
+                    return;
+                }
                 if (!hasSingleTarget && !string.IsNullOrEmpty(currentRoute))
                 {
                     int count = pathSystem.GetRouteWaypointCount(currentRoute);
@@ -398,7 +419,17 @@ namespace WinterMarket
             }
 
             Vector3 target;
-            if (hasSingleTarget)
+            if (hasRoadRoute)
+            {
+                if (roadRouteIndex < 0 || roadRouteIndex >= roadRoute.Count)
+                {
+                    hasRoadRoute = false;
+                    CompleteMovement();
+                    return;
+                }
+                target = roadRoute[roadRouteIndex];
+            }
+            else if (hasSingleTarget)
             {
                 target = singleTarget;
             }
@@ -408,7 +439,7 @@ namespace WinterMarket
                 return;
             }
 
-            if (!hasObstacleDetour && pathSystem != null &&
+            if (!hasRoadRoute && !hasObstacleDetour && pathSystem != null &&
                 pathSystem.TryGetObstacleDetour(transform.position, target, 0.24f, out Vector3 detour))
             {
                 obstacleDetour = detour;
@@ -429,6 +460,18 @@ namespace WinterMarket
                 if (hasSingleTarget)
                 {
                     CompleteMovement();
+                }
+                else if (hasRoadRoute)
+                {
+                    if (roadRouteIndex < roadRoute.Count - 1)
+                    {
+                        roadRouteIndex++;
+                    }
+                    else
+                    {
+                        hasRoadRoute = false;
+                        CompleteMovement();
+                    }
                 }
                 else
                 {
@@ -511,6 +554,8 @@ namespace WinterMarket
         {
             currentRoute = null;
             hasSingleTarget = false;
+            hasRoadRoute = false;
+            roadRoute.Clear();
             hasObstacleDetour = false;
 
             switch (state)

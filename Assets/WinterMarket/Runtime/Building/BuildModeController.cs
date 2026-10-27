@@ -389,6 +389,8 @@ namespace WinterMarket
         private void RefreshNavigation()
         {
             if (paths == null) return;
+            HashSet<Vector2Int> connectedRoads = BuildConnectedRoadNetwork();
+            paths.SetRoadNetwork(connectedRoads, GridSize);
             var obstacles = new List<PathSystem.NavigationObstacle>();
             var interests = new List<PathSystem.NamedWaypoint>();
             var interestRoutes = new List<PathSystem.NamedRoute>();
@@ -405,6 +407,7 @@ namespace WinterMarket
                         new Vector2(size.x * GridSize * 0.5f, size.y * GridSize * 0.5f)));
                 }
                 if (definition.Interest == BuildInterest.None) continue;
+                if (!paths.IsRoadCell(GetAccessCell(data))) continue;
                 Vector3 front = data.Position + data.Rotation * new Vector3(0f, 0f, -(size.y * GridSize * 0.5f + 0.36f));
                 front.y = 0.55f;
                 string waypointName = "build-" + data.id;
@@ -420,6 +423,36 @@ namespace WinterMarket
                     new[] { NPCState.VisitingStand, NPCState.Observing }));
             }
             paths.SetDynamicLayout(interests.ToArray(), interestRoutes.ToArray(), obstacles.ToArray());
+        }
+
+        private HashSet<Vector2Int> BuildConnectedRoadNetwork()
+        {
+            var allRoads = new HashSet<Vector2Int>(pathCells);
+            int minX = Mathf.RoundToInt(BuildMinX / GridSize);
+            int maxX = Mathf.RoundToInt(BuildMaxX / GridSize);
+            for (int x = minX; x <= maxX; x++)
+            {
+                for (int z = -5; z <= -3; z++) allRoads.Add(new Vector2Int(x, z));
+            }
+
+            var connected = new HashSet<Vector2Int>();
+            var queue = new Queue<Vector2Int>();
+            foreach (Vector2Int cell in allRoads)
+            {
+                if (!IsPublicAccessCell(cell) || !connected.Add(cell)) continue;
+                queue.Enqueue(cell);
+            }
+            Vector2Int[] directions = { Vector2Int.right, Vector2Int.up, Vector2Int.left, Vector2Int.down };
+            while (queue.Count > 0)
+            {
+                Vector2Int current = queue.Dequeue();
+                for (int index = 0; index < directions.Length; index++)
+                {
+                    Vector2Int next = current + directions[index];
+                    if (allRoads.Contains(next) && connected.Add(next)) queue.Enqueue(next);
+                }
+            }
+            return connected;
         }
 
         private void ValidatePreview()
@@ -1383,11 +1416,11 @@ namespace WinterMarket
                 vertices[vertex + 3] = new Vector3(x - half, 0.47f, z + half);
                 int triangle = index * 6;
                 triangles[triangle] = vertex;
-                triangles[triangle + 1] = vertex + 1;
-                triangles[triangle + 2] = vertex + 2;
+                triangles[triangle + 1] = vertex + 2;
+                triangles[triangle + 2] = vertex + 1;
                 triangles[triangle + 3] = vertex;
-                triangles[triangle + 4] = vertex + 2;
-                triangles[triangle + 5] = vertex + 3;
+                triangles[triangle + 4] = vertex + 3;
+                triangles[triangle + 5] = vertex + 2;
             }
             mesh.Clear();
             mesh.vertices = vertices;
@@ -1492,11 +1525,11 @@ namespace WinterMarket
                 vertices[vertex + 3] = new Vector3(x - half, 0.475f, z + half);
                 int triangle = index * 6;
                 triangles[triangle] = vertex;
-                triangles[triangle + 1] = vertex + 1;
-                triangles[triangle + 2] = vertex + 2;
+                triangles[triangle + 1] = vertex + 2;
+                triangles[triangle + 2] = vertex + 1;
                 triangles[triangle + 3] = vertex;
-                triangles[triangle + 4] = vertex + 2;
-                triangles[triangle + 5] = vertex + 3;
+                triangles[triangle + 4] = vertex + 3;
+                triangles[triangle + 5] = vertex + 2;
                 vertex += 4;
             }
         }

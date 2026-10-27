@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace WinterMarket
@@ -115,6 +116,8 @@ namespace WinterMarket
         private NamedWaypoint[] dynamicWaypoints = Array.Empty<NamedWaypoint>();
         private NamedRoute[] dynamicRoutes = Array.Empty<NamedRoute>();
         private NavigationObstacle[] staticNavigationObstacles = Array.Empty<NavigationObstacle>();
+        private readonly HashSet<Vector2Int> roadCells = new HashSet<Vector2Int>();
+        private float roadGridSize = 0.60f;
 
         /// <summary>Raised after a confirmed build change modifies walkable space.</summary>
         public int NavigationRevision { get; private set; }
@@ -127,6 +130,7 @@ namespace WinterMarket
             staticNavigationObstacles = navigationObstacles;
             dynamicWaypoints = Array.Empty<NamedWaypoint>();
             dynamicRoutes = Array.Empty<NamedRoute>();
+            roadCells.Clear();
             NavigationRevision++;
         }
 
@@ -141,6 +145,7 @@ namespace WinterMarket
             staticNavigationObstacles = navigationObstacles;
             dynamicWaypoints = Array.Empty<NamedWaypoint>();
             dynamicRoutes = Array.Empty<NamedRoute>();
+            roadCells.Clear();
             NavigationRevision++;
         }
 
@@ -161,6 +166,93 @@ namespace WinterMarket
             Array.Copy(staticNavigationObstacles, navigationObstacles, staticNavigationObstacles.Length);
             Array.Copy(safeDynamic, 0, navigationObstacles, staticNavigationObstacles.Length, safeDynamic.Length);
             NavigationRevision++;
+        }
+
+        /// <summary>
+        /// Replaces the walkable road graph. Only cells from this graph are used for normal
+        /// NPC travel; decorative terrain and free snow never become an implicit shortcut.
+        /// </summary>
+        public void SetRoadNetwork(IEnumerable<Vector2Int> cells, float gridSize)
+        {
+            roadCells.Clear();
+            if (cells != null)
+            {
+                foreach (Vector2Int cell in cells) roadCells.Add(cell);
+            }
+            roadGridSize = Mathf.Max(0.01f, gridSize);
+            NavigationRevision++;
+        }
+
+        public bool IsRoadCell(Vector2Int cell)
+        {
+            return roadCells.Contains(cell);
+        }
+
+        /// <summary>Builds a shortest four-direction route over the currently available roads.</summary>
+        public bool TryBuildRoadRoute(Vector3 origin, Vector3 destination, List<Vector3> output)
+        {
+            if (output == null) return false;
+            output.Clear();
+            if (roadCells.Count == 0) return false;
+
+            if (!TryFindNearestRoadCell(origin, out Vector2Int start) ||
+                !TryFindNearestRoadCell(destination, out Vector2Int end))
+            {
+                return false;
+            }
+
+            var queue = new Queue<Vector2Int>();
+            var visited = new HashSet<Vector2Int> { start };
+            var previous = new Dictionary<Vector2Int, Vector2Int>();
+            queue.Enqueue(start);
+            Vector2Int[] directions = { Vector2Int.right, Vector2Int.up, Vector2Int.left, Vector2Int.down };
+            bool found = false;
+            while (queue.Count > 0)
+            {
+                Vector2Int current = queue.Dequeue();
+                if (current == end)
+                {
+                    found = true;
+                    break;
+                }
+                for (int i = 0; i < directions.Length; i++)
+                {
+                    Vector2Int next = current + directions[i];
+                    if (!roadCells.Contains(next) || !visited.Add(next)) continue;
+                    previous[next] = current;
+                    queue.Enqueue(next);
+                }
+            }
+            if (!found) return false;
+
+            var reversed = new List<Vector2Int>();
+            for (Vector2Int cell = end; ; cell = previous[cell])
+            {
+                reversed.Add(cell);
+                if (cell == start) break;
+            }
+            for (int i = reversed.Count - 1; i >= 0; i--)
+            {
+                Vector2Int cell = reversed[i];
+                output.Add(new Vector3(cell.x * roadGridSize, 0.55f, cell.y * roadGridSize));
+            }
+            return output.Count > 0;
+        }
+
+        private bool TryFindNearestRoadCell(Vector3 position, out Vector2Int result)
+        {
+            float bestDistance = float.PositiveInfinity;
+            result = default;
+            foreach (Vector2Int cell in roadCells)
+            {
+                float x = cell.x * roadGridSize - position.x;
+                float z = cell.y * roadGridSize - position.z;
+                float distance = x * x + z * z;
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                result = cell;
+            }
+            return bestDistance < float.PositiveInfinity;
         }
 
         /// <summary>
