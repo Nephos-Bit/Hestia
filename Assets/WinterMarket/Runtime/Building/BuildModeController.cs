@@ -31,6 +31,8 @@ namespace WinterMarket
         private Transform layoutRoot;
         private BuildLayoutData layout;
         private BuildGridOverlay gridOverlay;
+        private RoadPreviewOverlay roadPreview;
+        private StructureSafetyOverlay safetyOverlay;
         private DynamicForestController forest;
         private bool configured;
         private bool buildMode;
@@ -47,6 +49,9 @@ namespace WinterMarket
         private bool roadPlacementActive;
         private bool hasRoadStart;
         private Vector3 roadStart;
+        private bool hasRoadPreviewEnd;
+        private Vector3 roadPreviewEnd;
+        private readonly List<Vector2Int> roadPreviewCells = new List<Vector2Int>();
 
         public bool IsBuildMode => buildMode;
         public bool HasPreview => preview != null;
@@ -64,6 +69,7 @@ namespace WinterMarket
             dioramaCamera = controller != null ? controller.DioramaCamera : Camera.main;
             layoutRoot = new GameObject("Gestaltbarer Markt").transform;
             layoutRoot.SetParent(controller != null ? controller.WorldRoot : transform, false);
+            safetyOverlay = StructureSafetyOverlay.Create(layoutRoot);
             forest = new DynamicForestController(layoutRoot, scene.Palette, scene.SnowCapMaterial);
             layout = BuildLayoutStore.LoadOrDefault();
             // Persist migrations and coordinate normalization before any object is rendered.
@@ -94,6 +100,10 @@ namespace WinterMarket
 
             if (roadPlacementActive)
             {
+                if (hasRoadStart && TryGetRoadHoverPoint(out Vector3 hoverPoint))
+                {
+                    UpdateRoadPreview(Snap(hoverPoint));
+                }
                 if (!pointerDown || IsOverBuildUi(pointer) || !TryGetGroundPoint(pointer, out Vector3 roadPoint)) return;
                 HandleRoadClick(Snap(roadPoint));
                 return;
@@ -226,6 +236,7 @@ namespace WinterMarket
             if (definition.Type == BuildObjectType.PathTile)
             {
                 roadPlacementActive = true;
+                EnsureRoadPreview();
                 validationMessage = "Startpunkt der Straße setzen";
                 return;
             }
@@ -283,6 +294,7 @@ namespace WinterMarket
                     Destroy(preview.gameObject);
                     preview = null;
                     original = null;
+                    safetyOverlay?.Clear();
                     return;
                 }
                 layout.objects[index] = after;
@@ -291,6 +303,7 @@ namespace WinterMarket
             Destroy(preview.gameObject);
             preview = null;
             original = null;
+            safetyOverlay?.Clear();
             RebuildLayout();
             SaveLayout();
         }
@@ -300,9 +313,13 @@ namespace WinterMarket
             if (preview != null) Destroy(preview.gameObject);
             preview = null;
             original = null;
+            safetyOverlay?.Clear();
             draggingPreview = false;
             roadPlacementActive = false;
             hasRoadStart = false;
+            hasRoadPreviewEnd = false;
+            roadPreviewCells.Clear();
+            if (roadPreview != null) roadPreview.Clear();
             validationMessage = null;
         }
 
@@ -408,7 +425,11 @@ namespace WinterMarket
         private void ValidatePreview()
         {
             previewIsValid = preview != null && IsValid(preview.Data, original != null ? original.id : null, out validationMessage);
-            if (preview == null) return;
+            if (preview == null)
+            {
+                safetyOverlay?.Clear();
+                return;
+            }
             Renderer[] renderers = preview.GetComponentsInChildren<Renderer>();
             Color tint = previewIsValid ? new Color(0.72f, 0.93f, 0.78f, 0.48f) : new Color(0.94f, 0.55f, 0.50f, 0.52f);
             for (int i = 0; i < renderers.Length; i++)
@@ -421,6 +442,38 @@ namespace WinterMarket
                         materials[material].SetColor("_BaseColor", tint);
                     }
                 }
+            }
+            UpdateSafetyZones();
+        }
+
+        private void UpdateSafetyZones()
+        {
+            if (preview == null || preview.Data.type == BuildObjectType.PathTile)
+            {
+                safetyOverlay?.Clear();
+                return;
+            }
+
+            var selectedCells = new HashSet<Vector2Int>();
+            AddSafetyCells(preview.Data, selectedCells);
+            var conflictingCells = new HashSet<Vector2Int>();
+            string ignoredId = original != null ? original.id : null;
+            foreach (PlacedBuildObjectData item in layout.objects)
+            {
+                if (item == null || item.id == ignoredId || item.type == BuildObjectType.PathTile) continue;
+                var itemCells = new HashSet<Vector2Int>();
+                AddSafetyCells(item, itemCells);
+                if (selectedCells.Overlaps(itemCells)) conflictingCells.UnionWith(itemCells);
+            }
+            safetyOverlay?.SetZones(selectedCells, conflictingCells);
+        }
+
+        private void AddSafetyCells(PlacedBuildObjectData data, HashSet<Vector2Int> cells)
+        {
+            foreach (Vector2Int cell in EnumerateCells(data)) cells.Add(cell);
+            if (BuildObjectLibrary.Get(data.type).Interest != BuildInterest.None)
+            {
+                cells.Add(GetAccessCell(data));
             }
         }
 
@@ -502,23 +555,31 @@ namespace WinterMarket
         }
 
         /// <summary>
-        /// The road tool expands the drawn centre line to the same three-cell width as the
-        /// default main road.  It only commits a complete, connected road: a failed endpoint
-        /// never leaves partial tiles in the saved layout.
+        /// A Manor-Lords-style road interaction: the first click anchors a start point, mouse
+        /// or touch movement previews the routed road, and the second click commits that route.
         /// </summary>
         private void HandleRoadClick(Vector3 point)
         {
             if (!hasRoadStart)
             {
+                if (!TryBuildRoadFootprint(point, point, out _, out string startReason))
+                {
+                    validationMessage = startReason;
+                    return;
+                }
                 roadStart = point;
                 hasRoadStart = true;
-                validationMessage = "Endpunkt der Straße setzen";
+                UpdateRoadPreview(point);
+                validationMessage = "Endpunkt wählen – die Vorschau folgt dem Zeiger";
                 return;
             }
 
             if (TryCreateRoad(roadStart, point, out string reason))
             {
                 hasRoadStart = false;
+                hasRoadPreviewEnd = false;
+                roadPreviewCells.Clear();
+                if (roadPreview != null) roadPreview.Clear();
                 validationMessage = "Straße angelegt – nächsten Startpunkt setzen";
             }
             else
@@ -529,26 +590,7 @@ namespace WinterMarket
 
         private bool TryCreateRoad(Vector3 start, Vector3 end, out string reason)
         {
-            var cells = new HashSet<Vector2Int>();
-            var centreLine = new List<Vector2Int>(EnumerateRoadCentreLine(start, end));
-            for (int index = 0; index < centreLine.Count; index++)
-            {
-                Vector2Int direction = index == 0
-                    ? (centreLine.Count > 1 ? centreLine[1] - centreLine[0] : Vector2Int.right)
-                    : centreLine[index] - centreLine[index - 1];
-                foreach (Vector2Int cell in ExpandRoadWidth(centreLine[index], direction)) cells.Add(cell);
-            }
-
-            if (cells.Count == 0)
-            {
-                reason = "Die Straße enthält keine Rasterfelder";
-                return false;
-            }
-
-            foreach (Vector2Int cell in cells)
-            {
-                if (!IsRoadCellValid(cell, out reason)) return false;
-            }
+            if (!TryBuildRoadFootprint(start, end, out HashSet<Vector2Int> cells, out reason)) return false;
 
             int added = 0;
             foreach (Vector2Int cell in cells)
@@ -571,27 +613,173 @@ namespace WinterMarket
             return true;
         }
 
-        private static IEnumerable<Vector2Int> EnumerateRoadCentreLine(Vector3 start, Vector3 end)
+        private void UpdateRoadPreview(Vector3 end)
+        {
+            if (hasRoadPreviewEnd && (roadPreviewEnd - end).sqrMagnitude < 0.0001f) return;
+            hasRoadPreviewEnd = true;
+            roadPreviewEnd = end;
+            EnsureRoadPreview();
+            if (TryBuildRoadFootprint(roadStart, end, out HashSet<Vector2Int> cells, out string reason))
+            {
+                roadPreviewCells.Clear();
+                roadPreviewCells.AddRange(cells);
+                roadPreview.SetCells(roadPreviewCells, true);
+                validationMessage = "Endpunkt wählen – die Vorschau folgt dem Zeiger";
+            }
+            else
+            {
+                roadPreviewCells.Clear();
+                roadPreview.Clear();
+                validationMessage = reason;
+            }
+        }
+
+        private bool TryBuildRoadFootprint(
+            Vector3 start,
+            Vector3 end,
+            out HashSet<Vector2Int> cells,
+            out string reason)
         {
             Vector2Int from = new Vector2Int(Mathf.RoundToInt(start.x / GridSize), Mathf.RoundToInt(start.z / GridSize));
             Vector2Int to = new Vector2Int(Mathf.RoundToInt(end.x / GridSize), Mathf.RoundToInt(end.z / GridSize));
-            int stepX = from.x <= to.x ? 1 : -1;
-            for (int x = from.x; x != to.x + stepX; x += stepX) yield return new Vector2Int(x, from.y);
-            int stepZ = from.y <= to.y ? 1 : -1;
-            for (int z = from.y + stepZ; z != to.y + stepZ; z += stepZ) yield return new Vector2Int(to.x, z);
+            if (!TryFindRoadRoute(from, to, out List<Vector2Int> route, out reason))
+            {
+                cells = null;
+                return false;
+            }
+
+            cells = BuildRoadFootprint(route);
+            foreach (Vector2Int cell in cells)
+            {
+                if (!IsRoadCellValid(cell, out reason)) return false;
+            }
+            reason = null;
+            return true;
         }
 
-        private static IEnumerable<Vector2Int> ExpandRoadWidth(Vector2Int center, Vector2Int direction)
+        private bool TryFindRoadRoute(
+            Vector2Int start,
+            Vector2Int end,
+            out List<Vector2Int> route,
+            out string reason)
         {
-            // The first L-shaped leg is horizontal; the final leg is vertical. At the bend both
-            // sets overlap, producing a clean square junction rather than a diagonal gap.
-            bool vertical = direction.x == 0;
-            for (int offset = -RoadHalfWidthCells; offset <= RoadHalfWidthCells; offset++)
+            var blocked = BuildRoadObstacles();
+            if (!IsRoadCenterAvailable(start, blocked) || !IsRoadCenterAvailable(end, blocked))
             {
-                yield return vertical
-                    ? new Vector2Int(center.x + offset, center.y)
-                    : new Vector2Int(center.x, center.y + offset);
+                route = null;
+                reason = "Start oder Ende liegt zu nah an einer Struktur";
+                return false;
             }
+
+            var queue = new Queue<Vector2Int>();
+            var visited = new HashSet<Vector2Int> { start };
+            var previous = new Dictionary<Vector2Int, Vector2Int>();
+            queue.Enqueue(start);
+            Vector2Int[] directions = { Vector2Int.right, Vector2Int.up, Vector2Int.left, Vector2Int.down };
+            bool found = false;
+            while (queue.Count > 0)
+            {
+                Vector2Int current = queue.Dequeue();
+                if (current == end)
+                {
+                    found = true;
+                    break;
+                }
+                for (int index = 0; index < directions.Length; index++)
+                {
+                    Vector2Int next = current + directions[index];
+                    if (visited.Contains(next) || !IsRoadCenterAvailable(next, blocked)) continue;
+                    visited.Add(next);
+                    previous[next] = current;
+                    queue.Enqueue(next);
+                }
+            }
+
+            if (!found)
+            {
+                route = null;
+                reason = "Für diese Straße gibt es keinen freien Weg um die Strukturen";
+                return false;
+            }
+
+            route = new List<Vector2Int>();
+            for (Vector2Int cursor = end; ; cursor = previous[cursor])
+            {
+                route.Add(cursor);
+                if (cursor == start) break;
+            }
+            route.Reverse();
+            reason = null;
+            return true;
+        }
+
+        private HashSet<Vector2Int> BuildRoadObstacles()
+        {
+            var blocked = new HashSet<Vector2Int>();
+            foreach (PlacedBuildObjectData item in layout.objects)
+            {
+                if (item == null || item.type == BuildObjectType.PathTile) continue;
+                // The route solver expands this set by the fixed road half-width. Generated
+                // forest is deliberately absent from layout and therefore never blocks roads.
+                foreach (Vector2Int cell in EnumerateCells(item)) blocked.Add(cell);
+            }
+            return blocked;
+        }
+
+        private static HashSet<Vector2Int> BuildRoadFootprint(List<Vector2Int> route)
+        {
+            var cells = new HashSet<Vector2Int>();
+            for (int index = 0; index < route.Count; index++)
+            {
+                Vector2Int direction = index < route.Count - 1
+                    ? route[index + 1] - route[index]
+                    : index > 0 ? route[index] - route[index - 1] : Vector2Int.right;
+                bool vertical = direction.x == 0;
+                for (int offset = -RoadHalfWidthCells; offset <= RoadHalfWidthCells; offset++)
+                {
+                    cells.Add(vertical
+                        ? new Vector2Int(route[index].x + offset, route[index].y)
+                        : new Vector2Int(route[index].x, route[index].y + offset));
+                }
+            }
+            return cells;
+        }
+
+        private static bool IsRoadCenterAvailable(Vector2Int center, HashSet<Vector2Int> blocked)
+        {
+            for (int z = -RoadHalfWidthCells; z <= RoadHalfWidthCells; z++)
+            {
+                for (int x = -RoadHalfWidthCells; x <= RoadHalfWidthCells; x++)
+                {
+                    Vector2Int cell = new Vector2Int(center.x + x, center.y + z);
+                    Vector3 position = new Vector3(cell.x * GridSize, 0f, cell.y * GridSize);
+                    if (position.x < BuildMinX || position.x > BuildMaxX ||
+                        position.z < BuildMinZ || position.z > BuildMaxZ || blocked.Contains(cell))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private bool TryGetRoadHoverPoint(out Vector3 point)
+        {
+            Vector2 screenPoint;
+            if (Input.touchCount > 0) screenPoint = Input.GetTouch(0).position;
+            else screenPoint = Input.mousePosition;
+            if (IsOverBuildUi(screenPoint))
+            {
+                point = default;
+                return false;
+            }
+            return TryGetGroundPoint(screenPoint, out point);
+        }
+
+        private void EnsureRoadPreview()
+        {
+            if (roadPreview != null) return;
+            roadPreview = RoadPreviewOverlay.Create(layoutRoot);
         }
 
         private bool IsRoadCellValid(Vector2Int cell, out string reason)
@@ -607,15 +795,6 @@ namespace WinterMarket
             {
                 reason = "Straßen dürfen keine Struktur überbauen";
                 return false;
-            }
-            foreach (PlacedBuildObjectData existing in layout.objects)
-            {
-                if (existing == null || BuildObjectLibrary.Get(existing.type).Interest == BuildInterest.None) continue;
-                if (cell == GetAccessCell(existing))
-                {
-                    reason = "Der Zugang zu einer Struktur muss frei bleiben";
-                    return false;
-                }
             }
             return true;
         }
@@ -1149,6 +1328,194 @@ namespace WinterMarket
                 int hash = cell.x * 73856093 ^ cell.y * 19349663;
                 return hash == int.MinValue ? 0 : Mathf.Abs(hash);
             }
+        }
+    }
+
+    /// <summary>Single transparent mesh used while a road endpoint is being chosen.</summary>
+    [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
+    internal sealed class RoadPreviewOverlay : MonoBehaviour
+    {
+        private Mesh mesh;
+        private Material material;
+
+        public static RoadPreviewOverlay Create(Transform parent)
+        {
+            var preview = new GameObject("Straßenvorschau");
+            preview.transform.SetParent(parent, false);
+            return preview.AddComponent<RoadPreviewOverlay>();
+        }
+
+        private void Awake()
+        {
+            mesh = new Mesh { name = "Straßenvorschau Mesh" };
+            GetComponent<MeshFilter>().sharedMesh = mesh;
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Sprites/Default");
+            material = new Material(shader) { renderQueue = 3001 };
+            if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend")) material.SetFloat("_Blend", 0f);
+            SetColor(new Color(0.48f, 0.9f, 0.66f, 0.68f));
+            MeshRenderer renderer = GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+
+        public void SetCells(IReadOnlyList<Vector2Int> cells, bool valid)
+        {
+            if (mesh == null) return;
+            if (cells == null || cells.Count == 0)
+            {
+                Clear();
+                return;
+            }
+            var vertices = new Vector3[cells.Count * 4];
+            var triangles = new int[cells.Count * 6];
+            float half = BuildModeController.GridSize * 0.5f;
+            for (int index = 0; index < cells.Count; index++)
+            {
+                Vector2Int cell = cells[index];
+                float x = cell.x * BuildModeController.GridSize;
+                float z = cell.y * BuildModeController.GridSize;
+                int vertex = index * 4;
+                vertices[vertex] = new Vector3(x - half, 0.47f, z - half);
+                vertices[vertex + 1] = new Vector3(x + half, 0.47f, z - half);
+                vertices[vertex + 2] = new Vector3(x + half, 0.47f, z + half);
+                vertices[vertex + 3] = new Vector3(x - half, 0.47f, z + half);
+                int triangle = index * 6;
+                triangles[triangle] = vertex;
+                triangles[triangle + 1] = vertex + 1;
+                triangles[triangle + 2] = vertex + 2;
+                triangles[triangle + 3] = vertex;
+                triangles[triangle + 4] = vertex + 2;
+                triangles[triangle + 5] = vertex + 3;
+            }
+            mesh.Clear();
+            mesh.vertices = vertices;
+            mesh.triangles = triangles;
+            mesh.RecalculateBounds();
+            SetColor(valid ? new Color(0.48f, 0.9f, 0.66f, 0.68f) : new Color(0.94f, 0.38f, 0.32f, 0.68f));
+        }
+
+        public void Clear()
+        {
+            if (mesh != null) mesh.Clear();
+        }
+
+        private void SetColor(Color color)
+        {
+            if (material == null) return;
+            material.color = color;
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        }
+
+        private void OnDestroy()
+        {
+            if (mesh != null) Destroy(mesh);
+            if (material != null) Destroy(material);
+        }
+    }
+
+    /// <summary>
+    /// Shows the reserved footprint and access cell of the structure currently being placed.
+    /// Conflicting placed structures are rendered separately so an overlap is immediately clear.
+    /// </summary>
+    [RequireComponent(typeof(MeshFilter), typeof(MeshRenderer))]
+    internal sealed class StructureSafetyOverlay : MonoBehaviour
+    {
+        private Mesh mesh;
+        private Material selectedMaterial;
+        private Material conflictMaterial;
+
+        public static StructureSafetyOverlay Create(Transform parent)
+        {
+            var overlay = new GameObject("Struktur-Sicherheitszonen");
+            overlay.transform.SetParent(parent, false);
+            return overlay.AddComponent<StructureSafetyOverlay>();
+        }
+
+        private void Awake()
+        {
+            mesh = new Mesh { name = "Struktur-Sicherheitszonen Mesh" };
+            GetComponent<MeshFilter>().sharedMesh = mesh;
+            selectedMaterial = CreateMaterial(new Color(0.3f, 0.74f, 1f, 0.36f));
+            conflictMaterial = CreateMaterial(new Color(1f, 0.25f, 0.2f, 0.48f));
+            MeshRenderer renderer = GetComponent<MeshRenderer>();
+            renderer.sharedMaterials = new[] { selectedMaterial, conflictMaterial };
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+
+        public void SetZones(IEnumerable<Vector2Int> selectedCells, IEnumerable<Vector2Int> conflictingCells)
+        {
+            var selected = new List<Vector2Int>(selectedCells ?? Array.Empty<Vector2Int>());
+            var conflicting = new List<Vector2Int>(conflictingCells ?? Array.Empty<Vector2Int>());
+            int count = selected.Count + conflicting.Count;
+            if (count == 0)
+            {
+                Clear();
+                return;
+            }
+
+            var vertices = new Vector3[count * 4];
+            var selectedTriangles = new int[selected.Count * 6];
+            var conflictTriangles = new int[conflicting.Count * 6];
+            int vertex = 0;
+            FillCells(selected, vertices, selectedTriangles, ref vertex);
+            FillCells(conflicting, vertices, conflictTriangles, ref vertex);
+            mesh.Clear();
+            mesh.vertices = vertices;
+            mesh.subMeshCount = 2;
+            mesh.SetTriangles(selectedTriangles, 0);
+            mesh.SetTriangles(conflictTriangles, 1);
+            mesh.RecalculateBounds();
+        }
+
+        public void Clear()
+        {
+            if (mesh != null) mesh.Clear();
+        }
+
+        private static void FillCells(
+            List<Vector2Int> cells,
+            Vector3[] vertices,
+            int[] triangles,
+            ref int vertex)
+        {
+            float half = BuildModeController.GridSize * 0.5f;
+            for (int index = 0; index < cells.Count; index++)
+            {
+                float x = cells[index].x * BuildModeController.GridSize;
+                float z = cells[index].y * BuildModeController.GridSize;
+                vertices[vertex] = new Vector3(x - half, 0.475f, z - half);
+                vertices[vertex + 1] = new Vector3(x + half, 0.475f, z - half);
+                vertices[vertex + 2] = new Vector3(x + half, 0.475f, z + half);
+                vertices[vertex + 3] = new Vector3(x - half, 0.475f, z + half);
+                int triangle = index * 6;
+                triangles[triangle] = vertex;
+                triangles[triangle + 1] = vertex + 1;
+                triangles[triangle + 2] = vertex + 2;
+                triangles[triangle + 3] = vertex;
+                triangles[triangle + 4] = vertex + 2;
+                triangles[triangle + 5] = vertex + 3;
+                vertex += 4;
+            }
+        }
+
+        private static Material CreateMaterial(Color color)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Sprites/Default");
+            var material = new Material(shader) { color = color, renderQueue = 3002 };
+            if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+            if (material.HasProperty("_Surface")) material.SetFloat("_Surface", 1f);
+            if (material.HasProperty("_Blend")) material.SetFloat("_Blend", 0f);
+            return material;
+        }
+
+        private void OnDestroy()
+        {
+            if (mesh != null) Destroy(mesh);
+            if (selectedMaterial != null) Destroy(selectedMaterial);
+            if (conflictMaterial != null) Destroy(conflictMaterial);
         }
     }
 
