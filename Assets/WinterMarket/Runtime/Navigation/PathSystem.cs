@@ -40,6 +40,18 @@ namespace WinterMarket
                 worldPosition = position;
             }
 
+            public NamedWaypoint(
+                string name,
+                Vector3 position,
+                NPCRole[] roles,
+                NPCState[] states)
+            {
+                waypointName = name;
+                worldPosition = position;
+                plausibleRoles = roles ?? Array.Empty<NPCRole>();
+                plausibleStates = states ?? Array.Empty<NPCState>();
+            }
+
             public void SetAnchor(Transform value)
             {
                 anchor = value;
@@ -71,6 +83,20 @@ namespace WinterMarket
                 loop = shouldLoop;
             }
 
+            public NamedRoute(
+                string name,
+                string[] points,
+                NPCRole[] roles,
+                NPCState[] states,
+                bool shouldLoop = false)
+            {
+                routeName = name;
+                waypointNames = points ?? Array.Empty<string>();
+                plausibleRoles = roles ?? Array.Empty<NPCRole>();
+                plausibleStates = states ?? Array.Empty<NPCState>();
+                loop = shouldLoop;
+            }
+
             internal string GetWaypointName(int index)
             {
                 return waypointNames[index];
@@ -86,11 +112,22 @@ namespace WinterMarket
         [SerializeField] private NamedRoute[] routes = Array.Empty<NamedRoute>();
         [SerializeField] private NavigationObstacle[] navigationObstacles = Array.Empty<NavigationObstacle>();
 
+        private NamedWaypoint[] dynamicWaypoints = Array.Empty<NamedWaypoint>();
+        private NamedRoute[] dynamicRoutes = Array.Empty<NamedRoute>();
+        private NavigationObstacle[] staticNavigationObstacles = Array.Empty<NavigationObstacle>();
+
+        /// <summary>Raised after a confirmed build change modifies walkable space.</summary>
+        public int NavigationRevision { get; private set; }
+
         public void Configure(NamedWaypoint[] namedWaypoints, NamedRoute[] namedRoutes)
         {
             waypoints = namedWaypoints ?? Array.Empty<NamedWaypoint>();
             routes = namedRoutes ?? Array.Empty<NamedRoute>();
             navigationObstacles = Array.Empty<NavigationObstacle>();
+            staticNavigationObstacles = navigationObstacles;
+            dynamicWaypoints = Array.Empty<NamedWaypoint>();
+            dynamicRoutes = Array.Empty<NamedRoute>();
+            NavigationRevision++;
         }
 
         public void Configure(
@@ -101,6 +138,29 @@ namespace WinterMarket
             waypoints = namedWaypoints ?? Array.Empty<NamedWaypoint>();
             routes = namedRoutes ?? Array.Empty<NamedRoute>();
             navigationObstacles = obstacles ?? Array.Empty<NavigationObstacle>();
+            staticNavigationObstacles = navigationObstacles;
+            dynamicWaypoints = Array.Empty<NamedWaypoint>();
+            dynamicRoutes = Array.Empty<NamedRoute>();
+            NavigationRevision++;
+        }
+
+        /// <summary>
+        /// Applies the current editable layout. Dynamic routes are intentionally short: the
+        /// existing detour solver handles the last metres around props and lets the original
+        /// market paths remain the primary public flow.
+        /// </summary>
+        public void SetDynamicLayout(
+            NamedWaypoint[] interests,
+            NamedRoute[] interestRoutes,
+            NavigationObstacle[] dynamicObstacles)
+        {
+            dynamicWaypoints = interests ?? Array.Empty<NamedWaypoint>();
+            dynamicRoutes = interestRoutes ?? Array.Empty<NamedRoute>();
+            NavigationObstacle[] safeDynamic = dynamicObstacles ?? Array.Empty<NavigationObstacle>();
+            navigationObstacles = new NavigationObstacle[staticNavigationObstacles.Length + safeDynamic.Length];
+            Array.Copy(staticNavigationObstacles, navigationObstacles, staticNavigationObstacles.Length);
+            Array.Copy(safeDynamic, 0, navigationObstacles, staticNavigationObstacles.Length, safeDynamic.Length);
+            NavigationRevision++;
         }
 
         /// <summary>
@@ -272,6 +332,16 @@ namespace WinterMarket
                         return true;
                     }
                 }
+
+                for (int i = 0; i < dynamicWaypoints.Length; i++)
+                {
+                    NamedWaypoint waypoint = dynamicWaypoints[i];
+                    if (waypoint != null && string.Equals(waypoint.Name, waypointName, StringComparison.Ordinal))
+                    {
+                        position = waypoint.Position;
+                        return true;
+                    }
+                }
             }
 
             position = default;
@@ -301,6 +371,18 @@ namespace WinterMarket
                         bestSqrDistance = sqrDistance;
                         best = candidate;
                     }
+                }
+            }
+
+            for (int i = 0; i < dynamicWaypoints.Length; i++)
+            {
+                NamedWaypoint candidate = dynamicWaypoints[i];
+                if (candidate == null || string.IsNullOrEmpty(candidate.Name)) continue;
+                float sqrDistance = (candidate.Position - origin).sqrMagnitude;
+                if (sqrDistance < bestSqrDistance)
+                {
+                    bestSqrDistance = sqrDistance;
+                    best = candidate;
                 }
             }
 
@@ -357,6 +439,26 @@ namespace WinterMarket
                         bestScore = score;
                         best = candidate;
                     }
+                }
+            }
+
+            for (int i = 0; i < dynamicWaypoints.Length; i++)
+            {
+                NamedWaypoint candidate = dynamicWaypoints[i];
+                if (candidate == null || string.IsNullOrEmpty(candidate.Name) || !candidate.IsPlausible(role, state))
+                {
+                    continue;
+                }
+
+                float sqrDistance = (candidate.Position - origin).sqrMagnitude;
+                if (sqrDistance < minimumSqr || sqrDistance > maximumSqr) continue;
+                uint hash = Mix(variation + (uint)(i + 101) * 747796405u);
+                float jitter = (hash & 1023u) * (0.00025f * Mathf.Max(1f, sqrDistance));
+                float score = sqrDistance + jitter;
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    best = candidate;
                 }
             }
 
@@ -421,6 +523,46 @@ namespace WinterMarket
                 }
             }
 
+            for (int i = 0; i < dynamicRoutes.Length; i++)
+            {
+                NamedRoute route = dynamicRoutes[i];
+                if (route == null || route.WaypointCount == 0 || string.IsNullOrEmpty(route.Name) ||
+                    !route.IsPlausible(role, state))
+                {
+                    continue;
+                }
+
+                uint score = Mix(variation ^ ((uint)(i + 101) * 277803737u));
+                if (score < best)
+                {
+                    best = score;
+                    selected = route.Name;
+                }
+            }
+
+            return selected;
+        }
+
+        /// <summary>Chooses only layout-provided activity routes, or null when none fit.</summary>
+        public string GetDynamicPlausibleRouteName(NPCRole role, NPCState state, uint variation)
+        {
+            string selected = null;
+            uint best = uint.MaxValue;
+            for (int i = 0; i < dynamicRoutes.Length; i++)
+            {
+                NamedRoute route = dynamicRoutes[i];
+                if (route == null || route.WaypointCount == 0 || string.IsNullOrEmpty(route.Name) ||
+                    !route.IsPlausible(role, state))
+                {
+                    continue;
+                }
+                uint score = Mix(variation ^ ((uint)(i + 401) * 277803737u));
+                if (score < best)
+                {
+                    best = score;
+                    selected = route.Name;
+                }
+            }
             return selected;
         }
 
@@ -436,6 +578,15 @@ namespace WinterMarket
                 for (int i = 0; i < routes.Length; i++)
                 {
                     NamedRoute route = routes[i];
+                    if (route != null && string.Equals(route.Name, routeName, StringComparison.Ordinal))
+                    {
+                        return route;
+                    }
+                }
+
+                for (int i = 0; i < dynamicRoutes.Length; i++)
+                {
+                    NamedRoute route = dynamicRoutes[i];
                     if (route != null && string.Equals(route.Name, routeName, StringComparison.Ordinal))
                     {
                         return route;

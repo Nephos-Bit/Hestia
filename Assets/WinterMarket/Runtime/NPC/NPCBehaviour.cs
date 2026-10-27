@@ -53,6 +53,7 @@ namespace WinterMarket
         private Vector3 obstacleDetour;
         private NPCBehaviour guardian;
         private float followSideOffset;
+        private int navigationRevision = -1;
 
         public NPCRole Role => role;
         public NPCState State => state;
@@ -109,6 +110,7 @@ namespace WinterMarket
             currentRoute = null;
             hasSingleTarget = false;
             hasObstacleDetour = false;
+            navigationRevision = navigation != null ? navigation.NavigationRevision : -1;
             guardian = null;
             observeAfterMovement = false;
             active = true;
@@ -369,6 +371,32 @@ namespace WinterMarket
 
         private void UpdateMovement(float deltaTime)
         {
+            // A confirmed build edit may have inserted a prop into a route. Do not teleport the
+            // figure: constrain it out of a new footprint and reacquire the closest part of the
+            // existing route on the next frame.
+            if (pathSystem != null && navigationRevision != pathSystem.NavigationRevision)
+            {
+                navigationRevision = pathSystem.NavigationRevision;
+                transform.position = pathSystem.ConstrainToWalkableSpace(
+                    transform.position + Vector3.left * 0.01f,
+                    transform.position,
+                    0.24f);
+                hasObstacleDetour = false;
+                if (!hasSingleTarget && !string.IsNullOrEmpty(currentRoute))
+                {
+                    int count = pathSystem.GetRouteWaypointCount(currentRoute);
+                    if (count > 0)
+                    {
+                        SelectRouteStart(count);
+                    }
+                    else
+                    {
+                        BeginMoving(state, null);
+                        return;
+                    }
+                }
+            }
+
             Vector3 target;
             if (hasSingleTarget)
             {

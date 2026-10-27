@@ -1,9 +1,9 @@
-# Wintermarkt – Diorama Prototype V0.2
+# Wintermarkt – Diorama Prototype V0.3
 
-Ein vollständig lokales, passiv beobachtbares Wintermarkt-Diorama für Android. Die Szene wird aus echten
-Voxel-Meshes aufgebaut, folgt der lokalen Gerätezeit und simuliert ruhige Alltagssituationen mit bis zu sechs NPCs.
-V0.2 ergänzt handgearbeitete Buden, gestufte Schneekanten am Baum, getrennte Emissions-Voxel, dezente AO und
-vielfältigere Figurenbewegungen.
+Ein vollständig lokales Wintermarkt-Diorama für Android. Die Szene wird aus echten Voxel-Meshes aufgebaut,
+folgt der lokalen Gerätezeit und simuliert ruhige Alltagssituationen mit bis zu sechs NPCs. V0.3 ergänzt einen
+touch-optimierten Baumodus mit verschiebbaren Marktständen, Dekorationen, Wegen, Undo/Redo und lokaler,
+versionierter Layoutspeicherung.
 
 ## Voraussetzungen
 
@@ -26,9 +26,12 @@ verwendet. Außerhalb der Nacht erscheint die erste Aktivität normalerweise inn
 
 ### Bedienung
 
-- Das Diorama benötigt keine Eingabe.
-- Der Diorama-Modus enthält kein sichtbares HUD und reagiert nicht mit einem Einstellungsmenü auf Berührung.
-- Die Kamera ist absichtlich stabil und nicht frei drehbar.
+- Das Diorama startet ohne sichtbares HUD. Eine Berührung blendet kurz `Bauen` ein.
+- `Bauen` öffnet eine Smartphone-Palette mit 46-dp-Touch-Zielen, zwei Objektspalten und Seitenwechsel.
+  Ein Objekt wählen, auf den Boden tippen, bei Bedarf drehen und mit `Setzen` bestätigen.
+- Ein platziertes Objekt ohne aktive Vorschau antippen, um es zu verschieben, zu drehen oder zu löschen.
+- `Abbruch` ändert das Layout nicht; `Undo` und `Redo` enthalten maximal 40 bestätigte Aktionen.
+- `Fertig` schließt den Baumodus vollständig. Die Kamera bleibt stabil und die NPC-Simulation läuft weiter.
 
 Für Entwicklungsbuilds kann das separate Debug-Menü ausdrücklich über `-winterDebugUI` aktiviert werden.
 
@@ -45,18 +48,22 @@ Systemzeit.
 
 ## Architektur
 
-- `SceneController`: Laufzeitaufbau und Verdrahtung des Dioramas
+- `SceneController`: Laufzeitaufbau und Verdrahtung von Terrain, Simulation und Bau-Subsystem
 - `VoxelVolume`, `VoxelGreedyMesher`, `VoxelAssetGenerator`: 0,15-m-Raster, verdeckte Flächen entfernt,
   coplanare Flächen zu Quads zusammengefasst
 - `TimeOfDayController`: lokale Uhr, fünf Tagesphasen und Debug-Override
 - `LightingController`: kontinuierliche Übergänge zwischen Nacht, Morgen, Nachmittag, Abend und Marktschluss
-- `PathSystem`: benannte, plausible Routen und Ziele
+- `BuildModeController`: Touch-Baumodus, 150 × 150 m Baubereich mit 0,60-m-Raster, Vorschau,
+  Validierung, Auswahl und Undo/Redo
+- `BuildObjectLibrary`, `BuildObjectVisual`: erweiterbarer Objektkatalog und prozedurale Voxelmodelle
+- `BuildLayoutStore`: atomar geschriebene, versionierte JSON-Datei unter `Application.persistentDataPath`
+- `PathSystem`: benannte Routen plus dynamische Hindernisse und Interaktionsziele aus dem Layout
 - `NPCDirector`: Pooling, Aktivitätsdichte und gewichtete Rollenwahl
 - `NPCBehaviour`: erweiterbare Zustandsmaschine, individuelle Kleidung/Körperproportionen,
   Abstandhalten und seltene Begegnungspausen
 - `AmbientController`: mehrschichtiger Schneefall und lokal synthetisierte Wind-/Schrittgeräusche
 - `QualityController`: Standard-/High-Profil, Render Scale, Schatten, SSAO und Partikellimits
-- `LocalSettings`: ausschließlich lokale `PlayerPrefs`
+- `LocalSettings`: ausschließlich lokale `PlayerPrefs` für globale Einstellungen
 - `FrameDiagnostics`: periodische Framerate- und zehnminütige Soak-Test-Meldungen
 
 Die erwachsenen NPC-Rollen sind Passant, Besucher, Standbetreiber, Lieferant und Reinigungskraft. Kinder erscheinen
@@ -69,13 +76,33 @@ umfassen Durchqueren, Verweilen, Standbesuch, Lieferung und abendliches Aufräum
 SSAO. `High` zielt auf 60 FPS, volle Render Scale, 2048er Schatten und zusätzliche Lichter. Lokale Punktlichter werfen
 keine Schatten; das Directional Light verwendet weiche dynamische Schatten.
 
+## Layout und Navigation
+
+Das Startlayout enthält die bisherigen Bäckerei- und Getränkestände, Baum, Laternen, Bank, Kisten und Karren
+als bearbeitbare Datensätze. Ihre V0.2-Proportionen und Voxelgeometrie werden unverändert übernommen; ihre
+Objektursprünge werden einheitlich auf das 0,60-m-Raster ausgerichtet. Der 150 × 150 m große Baubereich verwendet
+dieses Raster durchgängig. Die Bibliothek enthält zusätzlich
+Kakaostand, kleine Tanne, Schneemann, Feuerkorb, Zaun, Lichterdekoration und Schneepfade. Fußabdrücke verhindern
+Überlappungen; nur der bestehende öffentliche Querweg bleibt als Zugang frei. Neue Pfade müssen am öffentlichen
+Weg beginnen oder an einen bestehenden Pfad anschließen.
+
+Bestätigte Bauten aktualisieren Hindernisse, Besuchsziele und Lichtquellen. NPCs erkennen den
+Navigationswechsel, verlassen neue Hindernisflächen ohne Teleportation und wählen dynamische Stand-, Bank- oder
+Feuerkorb-Ziele nur gelegentlich. Nicht erreichbare Ziele werden über die bestehende Routenauswahl übersprungen.
+
+Die Datei `wintermarkt-layout.json` enthält IDs, Typen, 0,60-m-Positionen für neue Änderungen, 90°-Rotationen,
+Varianten, Darstellungseinstellungen und eine Formatversion. V1- und V2-Dateien werden beim Laden migriert;
+alle Objektursprünge werden dabei auf das Raster normalisiert. Beim Speichern wird zuerst eine temporäre Datei
+geschrieben; eine Sicherung wird als `wintermarkt-layout.backup.json` gehalten. Defekte Hauptdateien fallen auf
+diese Sicherung oder das Standardlayout zurück. Die Undo-Historie wird absichtlich nicht persistent gespeichert.
+
 ## Automatisierung
 
 Im Unity-Menü `Wintermarkt` stehen folgende Befehle bereit:
 
 - `Prepare Project`: URP, Android Player Settings und Startszene erzeugen
-- `Capture Four Times`: Renderings für 07:30, 14:00, 19:00 und 22:30 schreiben
-- `Run Functional Checks`: Mesh-, Zeit-, Rollen-, Szenen- und Offline-Prüfungen
+- `Capture V0.3 Screenshots`: vier Diorama-Renderings und eine Baumodus-Platzierung schreiben
+- `Run Functional Checks`: Mesh-, Zeit-, Rollen-, Szenen-, Baugrundlagen- und Offline-Prüfungen
 - `Build Android APK`: Development-APK für ARM64 erzeugen
 
 Kommandozeilenbeispiel:
@@ -89,7 +116,7 @@ Kommandozeilenbeispiel:
 
 Ausgaben:
 
-- APK: `Builds/Android/Wintermarkt-v0.2.apk`
+- APK: `Builds/Android/Wintermarkt-v0.3.apk`
 - Screenshots: `Artifacts/Screenshots`
 - V0.1-Vergleichsaufnahme: `Artifacts/Video/wintermarkt-v0.1-device.mp4`
 - Testbericht: `Docs/TEST_REPORT.md`
@@ -97,14 +124,14 @@ Ausgaben:
 Die Android-Startaktivität ist `com.unity3d.player.UnityPlayerGameActivity`. Installation per ADB:
 
 ```powershell
-& "$env:UNITY_ANDROID_SDK\platform-tools\adb.exe" install -r Builds\Android\Wintermarkt-v0.2.apk
+& "$env:UNITY_ANDROID_SDK\platform-tools\adb.exe" install -r Builds\Android\Wintermarkt-v0.3.apk
 & "$env:UNITY_ANDROID_SDK\platform-tools\adb.exe" shell am start -n com.felixseltmann.wintermarkt/com.unity3d.player.UnityPlayerGameActivity
 ```
 
-## Bekannte Grenzen von V0.2
+## Offene Prüfungspunkte von V0.3
 
-- Keine freie Kamera oder spielerische Progression
-- Keine Wirtschaftssimulation oder fortlaufende Hintergrundsimulation
-- Laufanimationen und Alltagstätigkeiten sind bewusst einfache prozedurale Voxelanimationen
-- Audio ist synthetisiert und atmosphärisch reduziert; es gibt keine Musik
-- Dynamische globale Beleuchtung und Raytracing werden bewusst nicht verwendet
+- Auf einem Android-Gerät sind der zehnminütige individuelle Diorama-Soak-Test und die 30-FPS-Messung erneut
+  durchzuführen; hierfür liegt noch kein V0.3-Gerätenachweis vor.
+- Die Baumodus-UI nutzt absichtlich Unity-IMGUI, um keine dauerhafte Canvas-Instanz und keine externen Assets
+  in den Diorama-Modus einzuführen. Eine spätere V0.4 könnte sie ohne Datenmigration durch uGUI ersetzen.
+- Keine freie Kamera, Wirtschaft, Fortschritt, Online-Funktionen oder Monetarisierung.

@@ -1,56 +1,53 @@
-# Wintermarkt V0.2 – Ist-Zustand und Testbericht
+# Wintermarkt V0.3 – Testbericht
 
 Datum: 2026-10-26  
 Zielplattform: Android, lokal/offline, Hochformat
 
-## Ist-Zustand vor V0.2
+## Bestandsaufnahme V0.2
 
-- V0.1 hatte einen prozedural erzeugten Voxelmarkt mit zwei Buden, Baum, orthografischer Kamera,
-  lokaler Gerätezeit, weichen Hauptlichtschatten, fünf NPC-Rollen und einem Pool von sechs Figuren.
-- Die frühere Darstellung ließ ganze Meshes anstelle einzelner Lichtquellen emittieren. Die Buden,
-  der Baum, NPC-Proportionen und Laufwege waren noch zu gleichförmig.
-- Das berührbare Einstellungsfeld war im regulären Betrachtungsmodus sichtbar. Der Android-Offlinebetrieb
-  und das 30-FPS-Ziel waren in V0.1 auf einem Nothing Phone (1) bereits teilweise nachgewiesen.
+| Bereich | Befund | Übernahme in V0.3 |
+|---|---|---|
+| Diorama/Kamera | Orthografische, stabile Kamera; kein reguläres HUD | unverändert |
+| Marktobjekte | Beim Start prozedural und fest erzeugt | durch layoutgesteuerte Voxelobjekte ersetzt |
+| Navigation | Eigene benannte Routen, Hindernisdetours; kein NavMesh | um dynamische Hindernisse und Ziele erweitert |
+| NPC-Ziele | An festen Waypoints/Routen ausgerichtet | vorhandene Routen beibehalten, Bauziele ergänzt |
+| Beleuchtung | Tageszeitcontroller, warme Punktlichter und Emissions-Meshes | dynamische Bau-Lichter werden nachbestückt |
+| Speicherung | `PlayerPrefs` für globale Einstellungen | versionierte JSON-Layoutdatei ergänzt |
 
-## Umgesetzt in V0.2
+## Implementiert
 
-- Beide Buden haben nun tragende Pfosten, tiefe Verkaufsöffnungen, Tresen, sichtbare Dachschichten,
-  Schneeauflagen, reduzierte Girlanden und wenige eindeutige Waren.
-- Der zentrale Baum hat eine gestufte Voxel-Silhouette, schneebedeckte Stufen, einzelne Dekorationen und
-  getrennte Licht-Voxel.
-- Fenster, Laternen und Baumlichter emittieren als getrennte Meshes. Das verhindert flächiges Leuchten von
-  Holz und Metall. Weiche Hauptlichtschatten, leicht verstärkte Kontaktschatten und dezentes SSAO sind aktiv.
-- Die Marktstände wurden weiter nach außen gesetzt, der Baum hat einen eigenen Mittelraum und die Kamera
-  wurde entsprechend weiter gefasst.
-- Das reguläre Diorama erzeugt kein HUD. Das Debug-Menü erfordert explizit `-winterDebugUI`.
-- NPCs variieren nun Mantel-, Mützen- und Schal-Farben, Breite, Größe, Tempo und Animationsphase. Getrennte
-  Routen verteilen sie über den Weg; statische Kollisionsflächen verhindern das Durchlaufen von Buden,
-  Baum und Lieferobjekten. Seltene Pausen zweier Figuren bilden kurze Begegnungen.
-- Die Beleuchtung enthält eine eigene Marktschluss-Stimmung um 22:30. Die vier Capture-Zeitpunkte sind
-  07:30, 14:00, 19:00 und 22:30; ohne Debug-Override gilt weiterhin die lokale Gerätezeit.
+- 150 × 150 m großer Baubereich mit 0,60-m-Raster, Grenzen, Fußabdrücken, Drehung in 90°-Schritten, gültiger/ungültiger Vorschau und expliziter Bestätigung.
+- Die bestehenden V0.2-Stände, Baum, Laternen, Bank, Kisten und Karren nutzen wieder ihre ursprünglichen Voxelproportionen; ihre Objektursprünge werden auf das 0,60-m-Raster normalisiert.
+- Schutz des öffentlichen Querwegs sowie Verhinderung von Überlappungen und Überbauung vorhandener Pfade.
+- Bearbeitbare Startobjekte: Bäckerei, Getränkestand, Weihnachtsbaum, zwei Laternen, Bank, Kisten und Handkarren.
+- Bibliothek: Kakaostand, kleine Tanne, Schneemann, Bank, Laterne, Feuerkorb, Kisten, Zaun, Lichterdekoration, kleiner Weihnachtsbaum, Handkarren und Schneepfad.
+- Smartphone-Baumodus mit mindestens 46-dp-Touch-Zielen, zweispaltiger Objektpalette, Seitenwechsel, Drehen, Bestätigen, Abbrechen, Löschen, Undo und Redo (je maximal 40 bestätigte Aktionen).
+- Dynamische Weg-Hindernisse, Besuchsziele für Stände sowie seltene Aufenthaltsziele für Bank/Feuerkorb. Aktive NPCs prüfen eine Navigationsrevision und richten sich ohne Teleportation neu aus.
+- Lokales JSON mit atomarem temporärem Schreiben und Backup, Formatversion, IDs, Typen, Positionen, Rotation, Varianten und Darstellungseinstellungen. Siehe [LAYOUT_EXAMPLE.json](LAYOUT_EXAMPLE.json).
+- Keine Netzwerk- oder Account-Abhängigkeit; Android `forceInternetPermission` bleibt deaktiviert.
 
-## Automatisierte Prüfungen
+## Verifikation
 
 | Prüfung | Status | Nachweis |
 |---|---|---|
-| C#-Kompilierung Laufzeit und Editor | erfüllt | `Assembly-CSharp.csproj` und `Assembly-CSharp-Editor.csproj` per MSBuild kompiliert; nur zwei bestehende Unity-6-Deprecation-Warnungen in `WinterMarketProjectBuilder`. |
-| Voxel-Greedy-Meshing | offen | `WinterMarketVerification.RunFunctionalChecks` vorhanden; Batchlauf konnte wegen Unity-Lizenzdienst nicht abschließen. |
-| Tagesphasen inklusive 22:30 | offen | Funktionstest deckt 05:29, 05:30, 09:30, 16:30, 20:30, 22:30 und 23:30 ab. |
-| Startmodule, sechs NPCs, Offline-Flag | offen | Funktionstest vorhanden; erneute Unity-Ausführung erforderlich. |
-| HUD-freier Diorama-Modus | Code geprüft | `SceneController` erzeugt `DioramaUIController` nur mit `-winterDebugUI`. |
-| Vier V0.2-Screenshots | offen | `Capture Four Times` schreibt `morning-0730.png`, `afternoon-1400.png`, `evening-1900.png`, `closing-2230.png`. |
-| Zwei Minuten NPC-Aufnahme | offen | Kein Laufzeit-/Aufnahmezugriff verfügbar. |
-| Offlinebetrieb im Flugmodus | offen | Kein Android-Gerät im aktuellen Lauf verfügbar. |
-| Android-Performance, Ziel 30 FPS | offen | Der V0.1-Gerätetest ist kein Nachweis für die geänderte V0.2-Szene. |
+| Laufzeit-C# | erfüllt | `dotnet build Assembly-CSharp.csproj --no-restore`: 0 Fehler, 0 Warnungen |
+| Editor-C# | erfüllt | `dotnet build Assembly-CSharp-Editor.csproj --no-restore`: 0 Fehler, 2 bestehende Unity-6-Deprecation-Warnungen |
+| Automatisierte Unity-Funktionschecks | offen | Batchlauf wurde durch eine bereits geöffnete Unity-Instanz für dasselbe Projekt gesperrt; es wurde keine Instanz beendet |
+| Diorama-Renderings | offen | `Wintermarkt/Capture V0.3 Screenshots` erzeugt vier Tageszeiten in `Artifacts/Screenshots` |
+| Baumodus-Rendering | offen | derselbe Menüpunkt erzeugt `build-mode-placement.png` mit Raster und Kakaostand-Vorschau |
+| Android-APK | offen | Buildmethode erzeugt bei installierter Android-Toolchain `Builds/Android/Wintermarkt-v0.3.apk` |
+| Wiederherstellung | Code geprüft | `BuildLayoutStore` liest Hauptdatei, Backup oder Standardlayout und verwendet keine Szenenreferenzen |
+| Android-30-FPS und 10-Minuten-Test | offen | kein V0.3-Gerätetest in diesem Lauf |
 
-## Einschränkung der aktuellen Verifikation
+## Auszuführende Unity-Befehle
 
-Der gestartete Unity-Batchlauf wartete auf den lokalen Unity-Lizenzdienst und führte innerhalb des verfügbaren
-Laufs keine Methoden aus. Es wurden deshalb keine V0.2-Screenshots, APKs oder Gerätewerte als bestanden markiert.
-Die vorhandenen V0.1-Artefakte bleiben unverändert und gelten nicht als V0.2-Nachweis.
+1. `Wintermarkt/Run Functional Checks`
+2. `Wintermarkt/Capture V0.3 Screenshots`
+3. `Wintermarkt/Build Android APK`
+4. Auf Android: Objekt versetzen, Laterne und Bank ergänzen, Baumodus verlassen, App beenden und neu starten; anschließend zehn Minuten beobachten und Framerate messen.
 
-## Ausstehende Abnahme
+## Offene Punkte
 
-1. Unity-Lizenzdienst herstellen und `Wintermarkt/Run Functional Checks` ausführen.
-2. `Wintermarkt/Capture Four Times` ausführen und die vier erzeugten Bilder visuell prüfen.
-3. V0.2-APK auf Android installieren, zwei Minuten aufzeichnen sowie Flugmodus und Framerate messen.
+- Die Performance-Anforderung von möglichst stabilen 30 FPS ist erst nach einem V0.3-Gerätetest erfüllt.
+- Das tatsächliche APK und die fünf neuen V0.3-Renderings können erst nach Freigabe der aktuell offenen Unity-Instanz erzeugt werden.
+- Die derzeitige IMGUI-Bauoberfläche ist bewusst klein und offline; eine spätere UI-Modernisierung darf das Layoutformat nicht verändern.

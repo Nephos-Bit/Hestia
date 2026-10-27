@@ -1,0 +1,12 @@
+{
+  "formatVersion": 3,
+  "objects": [
+    { "id": "builtin-bakery", "type": 0, "x": -4.2, "z": 1.2, "rotation": 0, "variant": "" },
+    { "id": "builtin-drinks", "type": 1, "x": 4.2, "z": 0.6, "rotation": 0, "variant": "" },
+    { "id": "builtin-tree", "type": 11, "x": 0.0, "z": 1.2, "rotation": 0, "variant": "" },
+    { "id": "example-cocoa", "type": 2, "x": -6.6, "z": 2.4, "rotation": 1, "variant": "" },
+    { "id": "example-bench", "type": 5, "x": 3.0, "z": 3.6, "rotation": 1, "variant": "" },
+    { "id": "example-lantern", "type": 6, "x": 2.4, "z": 2.4, "rotation": 0, "variant": "" }
+  ],
+  "preferences": { "lastCategory": "Decoration", "showGrid": true }
+}

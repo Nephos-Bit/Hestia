@@ -27,6 +27,7 @@ namespace WinterMarket
         public AmbientController Ambient { get; private set; }
         public Camera DioramaCamera { get; private set; }
         public Material[] Palette => palette;
+        public Material SnowCapMaterial => snowCapMaterial;
         public Transform WorldRoot => worldRoot;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -65,18 +66,9 @@ namespace WinterMarket
             placementGrid = new DioramaPlacementGrid(Grid);
 
             BuildGround();
-            BuildStall("Bäckerei", new Vector3(-4.35f, 0f, 0.95f), VoxelMaterialSlot.Slot4, true);
-            BuildStall("Heisse Getränke", new Vector3(4.35f, 0f, 0.55f), VoxelMaterialSlot.Slot9, false);
-            BuildTree(new Vector3(0f, 0f, 1.45f));
-            BuildLamp("Laterne West", new Vector3(-6.1f, 0f, -2.25f));
-            BuildLamp("Laterne Ost", new Vector3(6.1f, 0f, -2.25f));
-            BuildBench(new Vector3(-8.3f, 0f, -0.7f));
-            BuildCrates(new Vector3(8.2f, 0f, 3.3f));
-            BuildCart(new Vector3(4.8f, 0f, 3.5f));
             BuildSnowMounds();
 
             BuildCamera();
-            BuildBoundaryFirs();
             BuildSystems();
         }
 
@@ -109,24 +101,21 @@ namespace WinterMarket
             underlayRenderer.shadowCastingMode = ShadowCastingMode.Off;
             underlayRenderer.receiveShadows = false;
 
-            const int pathWidth = 13;
-            Vector3 pathCenter = new Vector3(0f, 0.305f, -2.675f);
-            placementGrid.ReserveWalkway("Hauptweg", pathCenter, 175, pathWidth);
-            // Main route and both stall entrances are a single volume. Separate coplanar
-            // path meshes caused visible overlap bands where their footprints met.
-            var path = new VoxelVolume(new Vector3Int(175, 1, 30));
-            path.FillCuboid(0, 0, 4, 175, 1, pathWidth, VoxelMaterialSlot.Slot8);
-            path.FillCuboid(52, 0, 17, 13, 1, 7, VoxelMaterialSlot.Slot8);
-            path.FillCuboid(110, 0, 17, 13, 1, 5, VoxelMaterialSlot.Slot8);
+            // The public main road is three construction cells wide. It is intentionally
+            // axis-aligned and uses the same cleared-snow material as roads the player draws.
+            const int pathWidth = 12;
+            Vector3 pathCenter = new Vector3(0f, 0.305f, -2.4f);
+            placementGrid.ReserveWalkway("Hauptweg", pathCenter, 180, pathWidth);
+            var path = new VoxelVolume(new Vector3Int(180, 1, pathWidth));
+            path.FillCuboid(0, 0, 0, 180, 1, pathWidth, VoxelMaterialSlot.Slot8);
             VoxelAssetGenerator pathAsset = CreateAsset(
                 "Freigeräumter Hauptweg",
                 path,
-                new Vector3(0f, 0.305f, -2f),
+                pathCenter,
                 true);
-            pathAsset.transform.rotation = Quaternion.Euler(0f, -3f, 0f);
 
-            ReserveClearedAccess("Geräumter Zugang Bäckerei", new Vector3(-4.35f, 0.305f, -1.175f), 13, 7);
-            ReserveClearedAccess("Geräumter Zugang Getränke", new Vector3(4.35f, 0.305f, -1.325f), 13, 5);
+            ReserveClearedAccess("Geräumter Zugang Bäckerei", new Vector3(-4.2f, 0.305f, -1.2f), 12, 6);
+            ReserveClearedAccess("Geräumter Zugang Getränke", new Vector3(4.2f, 0.305f, -1.2f), 12, 6);
         }
 
         private void ReserveClearedAccess(string objectName, Vector3 position, int width, int depth)
@@ -351,9 +340,9 @@ namespace WinterMarket
 
         private void BuildSnowMounds()
         {
-            CreateMound("Schneehügel Nordwest", new Vector3(-6.3f, 0.31f, 3.5f), 30, 6, 13);
-            CreateMound("Schneehügel Nordost", new Vector3(6.2f, 0.31f, 5.8f), 25, 5, 12);
-            CreateMound("Schneekante vorne", new Vector3(0.2f, 0.31f, -4.35f), 42, 4, 7);
+            CreateMound("Schneehügel Nordwest", new Vector3(-6f, 0.31f, 3.6f), 30, 6, 13);
+            CreateMound("Schneehügel Nordost", new Vector3(6f, 0.31f, 6f), 25, 5, 12);
+            CreateMound("Schneekante vorne", new Vector3(0f, 0.31f, -4.2f), 42, 4, 7);
         }
 
         private void BuildBoundaryFirs()
@@ -482,21 +471,21 @@ namespace WinterMarket
         {
             var cameraObject = new GameObject("Diorama Camera");
             cameraObject.transform.SetParent(transform, false);
-            Vector3 focusPoint = new Vector3(0f, 1.18f, -0.15f);
-            cameraObject.transform.position = new Vector3(9.7f, 8.9f, -9.7f);
+            Vector3 focusPoint = new Vector3(0f, 0.8f, -0.6f);
+            cameraObject.transform.position = new Vector3(18f, 22f, -23f);
             cameraObject.transform.LookAt(focusPoint);
 
             DioramaCamera = cameraObject.AddComponent<Camera>();
             DioramaCamera.orthographic = true;
-            DioramaCamera.orthographicSize = 14.8f;
+            DioramaCamera.orthographicSize = 22f;
             DioramaCamera.clearFlags = CameraClearFlags.SolidColor;
             DioramaCamera.backgroundColor = WinterPalette.Background;
             DioramaCamera.nearClipPlane = 0.1f;
-            DioramaCamera.farClipPlane = 80f;
+            DioramaCamera.farClipPlane = 180f;
             DioramaCamera.allowHDR = true;
             DioramaCamera.allowMSAA = true;
             cameraObject.AddComponent<AudioListener>();
-            cameraObject.AddComponent<AdaptiveOrthoCamera>().Configure(14.8f);
+            cameraObject.AddComponent<AdaptiveOrthoCamera>().Configure(22f);
         }
 
         private void BuildSystems()
@@ -533,6 +522,12 @@ namespace WinterMarket
             director.SetRuntimeReferences(factory, Paths, TimeOfDay);
             var footsteps = npcRoot.AddComponent<NPCFootstepAudioLink>();
             footsteps.Configure(director, Ambient);
+
+            // Market objects are data-driven from V0.3 onward. The controller keeps the
+            // terrain, atmosphere and camera from V0.2, while this module restores and owns
+            // movable stands, decoration, paths, dynamic lights and navigation metadata.
+            var buildMode = gameObject.AddComponent<BuildModeController>();
+            buildMode.Configure(this, Paths, Lighting);
 
             if (DioramaUIController.IsDebugUiRequested)
             {
@@ -593,18 +588,9 @@ namespace WinterMarket
                     "Cleaning",
                     new[] { "east-entry", "east-path", "cleaning", "bakery" })
             };
-            var obstacles = new[]
-            {
-                new PathSystem.NavigationObstacle(new Vector3(-4.35f, 0f, 0.95f), new Vector2(2.25f, 1.55f)),
-                new PathSystem.NavigationObstacle(new Vector3(4.35f, 0f, 0.55f), new Vector2(2.25f, 1.55f)),
-                new PathSystem.NavigationObstacle(new Vector3(0f, 0f, 1.45f), new Vector2(1.5f, 1.5f)),
-                new PathSystem.NavigationObstacle(new Vector3(-6.1f, 0f, -2.25f), new Vector2(0.3f, 0.3f)),
-                new PathSystem.NavigationObstacle(new Vector3(6.1f, 0f, -2.25f), new Vector2(0.3f, 0.3f)),
-                new PathSystem.NavigationObstacle(new Vector3(-8.3f, 0f, -0.7f), new Vector2(1.8f, 0.6f)),
-                new PathSystem.NavigationObstacle(new Vector3(8.2f, 0f, 3.3f), new Vector2(1.4f, 1.1f)),
-                new PathSystem.NavigationObstacle(new Vector3(4.8f, 0f, 3.5f), new Vector2(1.8f, 1.1f))
-            };
-            Paths.Configure(points, routes, obstacles);
+            // Editable objects contribute their current collision footprints after layout
+            // restoration. Static routes remain here; their geometry is no longer hard-coded.
+            Paths.Configure(points, routes, Array.Empty<PathSystem.NavigationObstacle>());
         }
 
         private VoxelAssetGenerator CreateAsset(
@@ -686,6 +672,7 @@ namespace WinterMarket
             DestroyOwnedComponent<AmbientController>();
             DestroyOwnedComponent<DioramaBoundaryForest>();
             DestroyOwnedComponent<DioramaUIController>();
+            DestroyOwnedComponent<BuildModeController>();
             DestroyOwnedComponent<FrameDiagnostics>();
 
             WinterMarketMaterialLibrary.DestroyOwned(palette);

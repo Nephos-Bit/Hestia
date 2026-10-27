@@ -164,6 +164,14 @@ namespace WinterMarket
                 case NPCRole.Visitor:
                     activity = Random01() < 0.58f ? NPCState.Observing : NPCState.VisitingStand;
                     preferredRoute = Random01() < 0.5f ? marketStallsRoute : marketStallsReverseRoute;
+                    // New stands, benches and fire bowls stay optional destinations. Most
+                    // visitors retain the original broad market flow, while a small share
+                    // deliberately samples a currently reachable layout interaction.
+                    if (activity == NPCState.VisitingStand && Random01() < 0.34f && pathSystem != null)
+                    {
+                        string dynamicRoute = pathSystem.GetDynamicPlausibleRouteName(role, activity, NextUInt());
+                        if (!string.IsNullOrEmpty(dynamicRoute)) preferredRoute = dynamicRoute;
+                    }
                     break;
                 case NPCRole.StallOperator:
                     activity = NPCState.VisitingStand;

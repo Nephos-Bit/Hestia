@@ -146,6 +146,19 @@ namespace WinterMarket
             ApplyAtHour(timeOfDay != null ? timeOfDay.Hour : GetLocalHour());
         }
 
+        /// <summary>
+        /// Replaces the lights and emissive meshes created by the editable market layout.
+        /// The time-of-day look is applied immediately, so newly placed lanterns never keep
+        /// their authoring intensity or colour until the next clock tick.
+        /// </summary>
+        public void SetDynamicWarmSources(Light[] lights, Renderer[] emissiveRenderers)
+        {
+            localWarmLights = lights ?? Array.Empty<Light>();
+            warmRenderers = emissiveRenderers ?? Array.Empty<Renderer>();
+            CacheLocalLightIntensities();
+            ApplyAtHour(timeOfDay != null ? timeOfDay.Hour : GetLocalHour());
+        }
+
         private void Awake()
         {
             EnsureLookDefaults();

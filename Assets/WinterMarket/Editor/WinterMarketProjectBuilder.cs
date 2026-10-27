@@ -38,7 +38,7 @@ namespace WinterMarket.Editor
             Debug.Log("WINTERMARKT_PREPARE_PASS scene=" + ScenePath);
         }
 
-        [MenuItem("Wintermarkt/Capture Four Times")]
+        [MenuItem("Wintermarkt/Capture V0.3 Screenshots")]
         public static void CaptureFourTimes()
         {
             PrepareProject();
@@ -54,8 +54,16 @@ namespace WinterMarket.Editor
             Capture(controller, 14f, "afternoon-1400.png");
             Capture(controller, 19f, "evening-1900.png");
             Capture(controller, 22.5f, "closing-2230.png");
+            BuildModeController buildMode = UnityEngine.Object.FindFirstObjectByType<BuildModeController>();
+            if (buildMode == null)
+            {
+                throw new InvalidOperationException("BuildModeController is missing.");
+            }
+            buildMode.ShowPreviewForCapture(BuildObjectType.CocoaStall, new Vector3(-6.6f, 0f, 2.4f));
+            Capture(controller, 19f, "build-mode-placement.png");
+            buildMode.ExitBuildMode();
             EditorSceneManager.MarkSceneDirty(scene);
-            Debug.Log("WINTERMARKT_CAPTURE_PASS count=4");
+            Debug.Log("WINTERMARKT_CAPTURE_PASS count=5 modes=diorama,build");
         }
 
         [MenuItem("Wintermarkt/Build Android APK")]
@@ -64,7 +72,7 @@ namespace WinterMarket.Editor
             PrepareProject();
             string root = Directory.GetParent(Application.dataPath)?.FullName
                 ?? throw new InvalidOperationException("Could not resolve project root.");
-            string output = Path.Combine(root, "Builds", "Android", "Wintermarkt-v0.2.apk");
+            string output = Path.Combine(root, "Builds", "Android", "Wintermarkt-v0.3.apk");
             Directory.CreateDirectory(Path.GetDirectoryName(output) ?? root);
             string shortGradleHome = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -150,7 +158,7 @@ namespace WinterMarket.Editor
         {
             PlayerSettings.companyName = "Felix Seltmann";
             PlayerSettings.productName = "Wintermarkt";
-            PlayerSettings.bundleVersion = "0.2.0";
+            PlayerSettings.bundleVersion = "0.3.0";
             PlayerSettings.colorSpace = ColorSpace.Linear;
             PlayerSettings.defaultInterfaceOrientation = UIOrientation.Portrait;
             PlayerSettings.allowedAutorotateToPortrait = true;

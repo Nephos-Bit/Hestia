@@ -18,6 +18,7 @@ namespace WinterMarket.Editor
             CheckTimePhases(failures);
             CheckRoleCoverage(failures);
             CheckSceneBoot(failures);
+            CheckBuildFoundation(failures);
             CheckOfflineConfiguration(failures);
 
             if (failures.Count > 0)
@@ -26,7 +27,7 @@ namespace WinterMarket.Editor
                     "WINTERMARKT_CHECKS_FAIL\n- " + string.Join("\n- ", failures));
             }
 
-            Debug.Log("WINTERMARKT_CHECKS_PASS checks=5 voxelMesh=timePhases=roles=sceneBoot=offline");
+            Debug.Log("WINTERMARKT_CHECKS_PASS checks=6 voxelMesh=timePhases=roles=sceneBoot=building=offline");
         }
 
         private static void CheckVoxelMeshing(List<string> failures)
@@ -181,7 +182,77 @@ namespace WinterMarket.Editor
             {
                 failures.Add("NPC object pool was not built with six reusable figures.");
             }
+            if (UnityEngine.Object.FindFirstObjectByType<BuildModeController>() == null)
+            {
+                failures.Add("V0.3 BuildModeController did not initialize.");
+            }
             EditorSceneManager.MarkSceneDirty(scene);
+        }
+
+        private static void CheckBuildFoundation(List<string> failures)
+        {
+            int decorationCount = 0;
+            bool hasCocoa = false;
+            bool hasPath = false;
+            for (int i = 0; i < BuildObjectLibrary.All.Count; i++)
+            {
+                BuildObjectDefinition definition = BuildObjectLibrary.All[i];
+                if (definition.Category == BuildCategory.Decoration) decorationCount++;
+                hasCocoa |= definition.Type == BuildObjectType.CocoaStall;
+                hasPath |= definition.Type == BuildObjectType.PathTile;
+            }
+            if (decorationCount < 9 || !hasCocoa || !hasPath)
+            {
+                failures.Add("V0.3 library is missing required decoration, cocoa stall, or path entries.");
+            }
+
+            BuildLayoutData defaults = BuildLayoutStore.CreateDefault();
+            var ids = new HashSet<string>();
+            for (int i = 0; i < defaults.objects.Count; i++)
+            {
+                PlacedBuildObjectData entry = defaults.objects[i];
+                if (entry == null || string.IsNullOrEmpty(entry.id) || !ids.Add(entry.id))
+                {
+                    failures.Add("Default V0.3 layout contains missing or duplicate object ids.");
+                    break;
+                }
+                float grid = BuildModeController.GridSize;
+                if (Mathf.Abs(entry.x / grid - Mathf.Round(entry.x / grid)) > 0.001f ||
+                    Mathf.Abs(entry.z / grid - Mathf.Round(entry.z / grid)) > 0.001f)
+                {
+                    failures.Add("Default V0.3 layout contains a prop that is not aligned to the construction grid.");
+                    break;
+                }
+            }
+            if (defaults.formatVersion != BuildLayoutData.CurrentVersion || defaults.objects.Count < 8)
+            {
+                failures.Add("Default V0.3 layout is not versioned or does not restore editable base props.");
+            }
+
+            var navigationRoot = new GameObject("Dynamic Navigation Check");
+            try
+            {
+                PathSystem navigation = navigationRoot.AddComponent<PathSystem>();
+                navigation.Configure(
+                    new[] { new PathSystem.NamedWaypoint("west-entry", Vector3.zero) },
+                    Array.Empty<PathSystem.NamedRoute>(),
+                    Array.Empty<PathSystem.NavigationObstacle>());
+                navigation.SetDynamicLayout(
+                    new[] { new PathSystem.NamedWaypoint("build-test", new Vector3(1.5f, 0.55f, 0f)) },
+                    new[] { new PathSystem.NamedRoute("visit-test", new[] { "west-entry", "build-test" }) },
+                    new[] { new PathSystem.NavigationObstacle(new Vector3(0.75f, 0f, 0.8f), Vector2.one * 0.3f) });
+                if (navigation.GetRouteWaypointCount("visit-test") != 2 ||
+                    !navigation.TryGetRouteWaypoint("visit-test", 1, out Vector3 target) ||
+                    Vector3.Distance(target, new Vector3(1.5f, 0.55f, 0f)) > 0.01f ||
+                    navigation.NavigationRevision < 2)
+                {
+                    failures.Add("Dynamic build navigation did not register a route and target.");
+                }
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(navigationRoot);
+            }
         }
 
         private static void CheckOfflineConfiguration(List<string> failures)
