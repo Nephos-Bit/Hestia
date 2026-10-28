@@ -162,7 +162,9 @@ namespace WinterMarket
             unchecked
             {
                 int hash = patchX * 92837111 ^ patchZ * 689287499;
-                return (hash & 7) == 0 ? VoxelMaterialSlot.Slot1 : VoxelMaterialSlot.Slot0;
+                // Broad, sparse patches retain the calm snowfield while making slopes and
+                // footsteps read as layered snow rather than an unbroken white plane.
+                return (hash & 3) == 0 ? VoxelMaterialSlot.Slot1 : VoxelMaterialSlot.Slot0;
             }
         }
 
@@ -242,8 +244,10 @@ namespace WinterMarket
     {
         private const int ChunkSizeCells = 48;
         private const int TreeInfluencePaddingCells = 20;
-        private const int StandardHashDivisor = 52;
-        private const int HighHashDivisor = 30;
+        // Trees are still batched by chunk, so this gives the horizon a fuller silhouette
+        // without introducing per-tree renderers or GameObjects.
+        private const int StandardHashDivisor = 44;
+        private const int HighHashDivisor = 28;
         private static readonly int MinX = Mathf.RoundToInt(BuildModeController.BuildMinX / BuildModeController.GridSize);
         private static readonly int MaxX = Mathf.RoundToInt(BuildModeController.BuildMaxX / BuildModeController.GridSize);
         private static readonly int MinZ = Mathf.RoundToInt(BuildModeController.BuildMinZ / BuildModeController.GridSize);
@@ -428,7 +432,9 @@ namespace WinterMarket
         private static bool IsCentralMarketOpening(Vector2Int cell)
         {
             float normalizedX = cell.x / 23f;
-            float normalizedZ = (cell.y - 2f) / 18f;
+            // Keep the market floor clear, but allow a closer backdrop behind the stalls.
+            // This removes the featureless snow field that previously surrounded the scene.
+            float normalizedZ = (cell.y - 2f) / 13f;
             return normalizedX * normalizedX + normalizedZ * normalizedZ < 1f;
         }
 

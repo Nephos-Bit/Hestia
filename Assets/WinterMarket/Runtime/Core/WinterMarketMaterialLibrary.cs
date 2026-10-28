@@ -108,15 +108,22 @@ namespace WinterMarket
             float metallic = 0f)
         {
             Material source = Resources.Load<Material>(ResourceFolder + resourceName);
+            Material material;
             if (source != null && source.shader != null)
             {
-                return new Material(source) { name = materialName + " (Runtime)" };
+                material = new Material(source);
+            }
+            else
+            {
+                Shader usable = shader != null ? shader : FindLitShader();
+                material = usable != null
+                    ? new Material(usable)
+                    : new Material(Shader.Find("Unlit/Color"));
             }
 
-            Shader usable = shader != null ? shader : FindLitShader();
-            var material = usable != null
-                ? new Material(usable)
-                : new Material(Shader.Find("Unlit/Color"));
+            // Resource assets survive palette tuning between builds. Apply the authored
+            // surface values after cloning so an old asset cannot silently flatten the
+            // runtime look.
             material.name = materialName + " (Runtime)";
             SetColor(material, color);
             if (material.HasProperty("_Smoothness"))

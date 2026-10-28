@@ -4,16 +4,19 @@ namespace WinterMarket
 {
     public static class WinterPalette
     {
-        public static readonly Color Snow = Hex("F5F7F8");
-        public static readonly Color SnowShadow = Hex("DFE8ED");
-        public static readonly Color SnowCap = Hex("C9DCE8");
-        public static readonly Color SnowCapShade = Hex("8EADC0");
-        public static readonly Color Background = Hex("FAFBFC");
-        public static readonly Color LightWood = Hex("B58C6B");
-        public static readonly Color DarkWood = Hex("795A47");
-        public static readonly Color ChristmasRed = Hex("A85D55");
-        public static readonly Color FirGreen = Hex("557665");
-        public static readonly Color ForestFirGreen = Hex("496A5B");
+        // The palette deliberately separates lit snow, compressed snow and roof snow. The
+        // former values were so close together on a phone display that the voxel layers read
+        // as a single flat white surface.
+        public static readonly Color Snow = Hex("F1F5F7");
+        public static readonly Color SnowShadow = Hex("C9DAE4");
+        public static readonly Color SnowCap = Hex("BCD4E2");
+        public static readonly Color SnowCapShade = Hex("7FA5BB");
+        public static readonly Color Background = Hex("E8F0F4");
+        public static readonly Color LightWood = Hex("BC916A");
+        public static readonly Color DarkWood = Hex("60493B");
+        public static readonly Color ChristmasRed = Hex("A9564E");
+        public static readonly Color FirGreen = Hex("4F705F");
+        public static readonly Color ForestFirGreen = Hex("3E6253");
         public static readonly Color Lantern = Hex("FFD19A");
         public static readonly Color Night = Hex("778CA8");
         // Cleared, compacted ground: deliberately earthy against the surrounding snow.
