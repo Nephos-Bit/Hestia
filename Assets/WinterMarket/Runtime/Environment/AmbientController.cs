@@ -12,6 +12,7 @@ namespace WinterMarket
         [SerializeField] private AudioSource oneShotSource;
         [SerializeField, Range(0f, 1f)] private float windVolume = 0.075f;
 
+        private AudioClip windClip;
         private AudioClip[] footsteps;
         private Camera dioramaCamera;
         private Vector3 lastCoverageCenter;
@@ -166,6 +167,8 @@ namespace WinterMarket
 
         private void BuildAudio()
         {
+            ReleaseGeneratedAudioClips();
+
             if (windSource == null)
             {
                 windSource = gameObject.AddComponent<AudioSource>();
@@ -175,7 +178,8 @@ namespace WinterMarket
             windSource.playOnAwake = false;
             windSource.spatialBlend = 0f;
             windSource.volume = windVolume;
-            windSource.clip = CreateWindClip();
+            windClip = CreateWindClip();
+            windSource.clip = windClip;
             windSource.Play();
 
             if (oneShotSource == null)
@@ -188,6 +192,35 @@ namespace WinterMarket
             oneShotSource.playOnAwake = false;
             oneShotSource.spatialBlend = 0.45f;
             footsteps = new[] { CreateFootstepClip(0), CreateFootstepClip(1) };
+        }
+
+        private void OnDestroy()
+        {
+            ReleaseGeneratedAudioClips();
+        }
+
+        private void ReleaseGeneratedAudioClips()
+        {
+            if (windSource != null && windSource.clip == windClip)
+            {
+                windSource.Stop();
+                windSource.clip = null;
+            }
+
+            WinterMarketMaterialLibrary.DestroyOwned(windClip);
+            windClip = null;
+
+            if (footsteps == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < footsteps.Length; i++)
+            {
+                WinterMarketMaterialLibrary.DestroyOwned(footsteps[i]);
+            }
+
+            footsteps = null;
         }
 
         private static AudioClip CreateWindClip()

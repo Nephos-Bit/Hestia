@@ -242,6 +242,13 @@ namespace WinterMarket
                     File.Move(temporary, target);
                 }
             }
+            catch (Exception exception) when (
+                exception is IOException ||
+                exception is UnauthorizedAccessException ||
+                exception is ArgumentException)
+            {
+                Debug.LogWarning("Wintermarkt: Layoutdatei konnte nicht gespeichert werden; Änderungen bleiben nur für diese Sitzung erhalten.");
+            }
             finally
             {
                 if (File.Exists(temporary)) File.Delete(temporary);

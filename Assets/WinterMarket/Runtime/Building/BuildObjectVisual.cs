@@ -49,10 +49,7 @@ namespace WinterMarket
 
         private void OnDestroy()
         {
-            for (int i = 0; i < previewMaterials.Length; i++)
-            {
-                if (previewMaterials[i] != null) Destroy(previewMaterials[i]);
-            }
+            WinterMarketMaterialLibrary.DestroyOwned(previewMaterials);
         }
     }
 
@@ -60,8 +57,6 @@ namespace WinterMarket
     public static class BuildObjectVisual
     {
         private const float Voxel = VoxelVolume.GridSize;
-        public const string GeneratedForestVariant = "generated-forest";
-
         public static MarketBuildObject Create(
             PlacedBuildObjectData data,
             Material[] sourcePalette,
@@ -92,12 +87,7 @@ namespace WinterMarket
                     CreateStall(result, palette, VoxelMaterialSlot.Slot4, "Kakao", true, false, snowCapMaterial);
                     break;
                 case BuildObjectType.SmallFir:
-                    CreateFir(
-                        result,
-                        palette,
-                        false,
-                        snowCapMaterial,
-                        data.variant == GeneratedForestVariant);
+                    CreateFir(result, palette, false, snowCapMaterial);
                     break;
                 case BuildObjectType.Snowman:
                     CreateSnowman(result, palette);
@@ -185,53 +175,32 @@ namespace WinterMarket
             MarketBuildObject result,
             Material[] palette,
             bool decorated,
-            Material snowCapMaterial,
-            bool forestSnow = false)
+            Material snowCapMaterial)
         {
             if (decorated)
             {
                 CreateLegacyChristmasTree(result, palette, snowCapMaterial);
                 return;
             }
-            int size = decorated ? 19 : 17;
-            int height = decorated ? 25 : 20;
+            const int size = 17;
+            const int height = 20;
             var tree = new VoxelVolume(new Vector3Int(size, height, size));
-            var glow = decorated ? new VoxelVolume(new Vector3Int(size, height, size)) : null;
             int center = size / 2;
-            tree.FillCuboid(center - 1, 0, center - 1, 3, decorated ? 8 : 5, 3, VoxelMaterialSlot.Slot3);
-            int levels = decorated ? 12 : 8;
+            tree.FillCuboid(center - 1, 0, center - 1, 3, 5, 3, VoxelMaterialSlot.Slot3);
+            const int levels = 8;
             for (int i = 0; i < levels; i++)
             {
                 int radius = Mathf.Max(1, (levels - i + 1) / 2);
                 int side = radius * 2 + 1;
-                int y = forestSnow ? 4 + i * 2 : (decorated ? 5 : 4) + i;
-                VoxelMaterialSlot foliage = forestSnow ? VoxelMaterialSlot.Slot15 : VoxelMaterialSlot.Slot5;
-                tree.FillCuboid(center - radius, y, center - radius, side, 1, side, foliage);
-                if (forestSnow)
-                {
-                    // A complete, thin cap on each branch tier gives the distant forest a
-                    // clear snow-covered silhouette without a second renderer per tree.
-                    tree.FillCuboid(center - radius, y + 1, center - radius, side, 1, side, VoxelMaterialSlot.Slot0);
-                }
-                else if (i % 2 == 0 && radius > 1)
+                int y = 4 + i;
+                tree.FillCuboid(center - radius, y, center - radius, side, 1, side, VoxelMaterialSlot.Slot5);
+                if (i % 2 == 0 && radius > 1)
                 {
                     tree.FillCuboid(center - radius, y + 1, center - radius, side, 1, 1, VoxelMaterialSlot.Slot0);
                     tree.FillCuboid(center - radius, y + 1, center + radius, side, 1, 1, VoxelMaterialSlot.Slot0);
                 }
             }
-            if (decorated)
-            {
-                glow.SetVoxel(center, 17, center - 5, VoxelMaterialSlot.Slot6);
-                tree.SetVoxel(center - 6, 13, center, VoxelMaterialSlot.Slot4);
-                glow.SetVoxel(center + 5, 10, center + 4, VoxelMaterialSlot.Slot6);
-            }
-            AddVolume(result, decorated ? "Weihnachtsbaum" : "Kleine Tanne", tree, palette, Vector3.zero);
-            if (decorated)
-            {
-                Renderer lights = AddVolume(result, "Baumlichter", glow, palette, Vector3.zero);
-                result.AddWarmRenderer(lights);
-                CreateWarmLight(result, new Vector3(0f, 1.7f, 0f), 2.5f, 0.65f);
-            }
+            AddVolume(result, "Kleine Tanne", tree, palette, Vector3.zero);
         }
 
         private static void CreateLegacyChristmasTree(

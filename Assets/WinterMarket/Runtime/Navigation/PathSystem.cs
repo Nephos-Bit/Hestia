@@ -764,7 +764,7 @@ namespace WinterMarket
             return enter <= exit;
         }
 
-        private static bool Contains(NPCRole[] values, NPCRole value)
+        private static bool Contains<T>(T[] values, T value)
         {
             if (values == null || values.Length == 0)
             {
@@ -773,25 +773,7 @@ namespace WinterMarket
 
             for (int i = 0; i < values.Length; i++)
             {
-                if (values[i] == value)
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static bool Contains(NPCState[] values, NPCState value)
-        {
-            if (values == null || values.Length == 0)
-            {
-                return true;
-            }
-
-            for (int i = 0; i < values.Length; i++)
-            {
-                if (values[i] == value)
+                if (EqualityComparer<T>.Default.Equals(values[i], value))
                 {
                     return true;
                 }

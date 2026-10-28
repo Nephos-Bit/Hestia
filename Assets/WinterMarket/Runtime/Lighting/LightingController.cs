@@ -137,7 +137,6 @@ namespace WinterMarket
             Camera camera = null)
         {
             Unsubscribe();
-            EnsureLookDefaults();
             timeOfDay = clock;
             directionalLight = mainLight;
             dioramaCamera = camera;
@@ -163,7 +162,6 @@ namespace WinterMarket
 
         private void Awake()
         {
-            EnsureLookDefaults();
             CacheLocalLightIntensities();
             if (warmRenderers == null)
             {
@@ -429,7 +427,14 @@ namespace WinterMarket
             return normalized < 0f ? normalized + HoursPerDay : normalized;
         }
 
-        private void EnsureLookDefaults()
+        // Reset is invoked when the component is added or explicitly reset in the editor.
+        // Runtime configuration must retain values authored in the inspector.
+        private void Reset()
+        {
+            ApplyDefaultLooks();
+        }
+
+        private void ApplyDefaultLooks()
         {
             night = new LightingLook
             {
@@ -525,7 +530,6 @@ namespace WinterMarket
                 warmRenderers = Array.Empty<Renderer>();
             }
 
-            EnsureLookDefaults();
         }
     }
 }
