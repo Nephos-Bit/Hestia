@@ -62,9 +62,10 @@ Systemzeit.
 - `NPCBehaviour`: erweiterbare Zustandsmaschine, individuelle Kleidung/Körperproportionen,
   Abstandhalten und seltene Begegnungspausen
 - `AmbientController`: mehrschichtiger Schneefall und lokal synthetisierte Wind-/Schrittgeräusche
-- `QualityController`: Standard-/High-Profil, Render Scale, Schatten, SSAO und Partikellimits
+- `QualityController`: Standard-/High-Profil, Render Scale, Schatten, SSAO, Licht- und Partikellimits
+- `ChunkedDeepSnowController`, `ChunkedForestController`: inkrementell aktualisierte 48×48-Zellen-Mesh-Chunks ohne Waldobjekt-Renderer pro Baum
 - `LocalSettings`: ausschließlich lokale `PlayerPrefs` für globale Einstellungen
-- `FrameDiagnostics`: periodische Framerate- und zehnminütige Soak-Test-Meldungen
+- `FrameDiagnostics`: Development-/`-perfCapture`-Messung für P95-Framezeit, GC, Draw Calls, Speicher und Bauaktionsdauer
 
 Die erwachsenen NPC-Rollen sind Passant, Besucher, Standbetreiber, Lieferant und Reinigungskraft. Kinder erscheinen
 nur als kleinere Begleitung eines Passanten oder Besuchers und folgen diesem durch die Szene. Beobachtbare Abläufe
@@ -72,9 +73,14 @@ umfassen Durchqueren, Verweilen, Standbesuch, Lieferung und abendliches Aufräum
 
 ## Rendering und Mobile-Profile
 
-`Standard` zielt auf 30 FPS, 0,85 Render Scale, 1024er Hauptlichtschatten, reduzierte lokale Lichter und dezentes
-SSAO. `High` zielt auf 60 FPS, volle Render Scale, 2048er Schatten und zusätzliche Lichter. Lokale Punktlichter werfen
-keine Schatten; das Directional Light verwendet weiche dynamische Schatten.
+`Standard` ist die Voreinstellung für 30 FPS auf Android-Mittelklasse: 0,75 Render Scale mit FSR, kein HDR, kein
+MSAA, kein SSAO, 512er Hauptlichtschatten, eine Cascade und höchstens vier warme Punktlichter. `High` zielt auf
+60 FPS auf aktuellen Geräten: 0,9 Render Scale, HDR, 2× MSAA, heruntergerechnetes SSAO, 1024er Schatten, zwei
+Cascades und höchstens acht warme Lichter. Lokale Punktlichter werfen keine Schatten und werden bei Tageslicht
+deaktiviert; das Directional Light verwendet im Standardprofil harte und im High-Profil weiche Schatten.
+
+Für eine Leistungsaufzeichnung einen Development-Player mit `-perfCapture` starten. Die Logausgabe enthält im
+30-Sekunden-Takt FPS, P95- und Worst-Framezeit, GC-Allokationen, Draw Calls, Speicher und P95-Bauaktionsdauer.
 
 ## Layout und Navigation
 

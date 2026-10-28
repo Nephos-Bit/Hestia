@@ -186,7 +186,30 @@ namespace WinterMarket.Editor
             {
                 failures.Add("V0.3 BuildModeController did not initialize.");
             }
+            CheckMobileEnvironmentChunking(failures);
             EditorSceneManager.MarkSceneDirty(scene);
+        }
+
+        private static void CheckMobileEnvironmentChunking(List<string> failures)
+        {
+            GameObject forestRoot = GameObject.Find("Dynamischer Wald Chunks");
+            if (forestRoot == null)
+            {
+                failures.Add("Mobile forest chunks were not initialized.");
+                return;
+            }
+
+            int forestRenderers = forestRoot.GetComponentsInChildren<MeshRenderer>(true).Length;
+            if (forestRenderers == 0 || forestRenderers > 108)
+            {
+                failures.Add(
+                    $"Forest chunk renderer budget is invalid (renderers={forestRenderers}, expected 1..108).");
+            }
+
+            if (forestRoot.GetComponentsInChildren<MarketBuildObject>(true).Length != 0)
+            {
+                failures.Add("Forest still creates MarketBuildObject instances per tree.");
+            }
         }
 
         private static void CheckBuildFoundation(List<string> failures)

@@ -123,6 +123,8 @@ namespace WinterMarket
         private float[] localLightBaseIntensities = Array.Empty<float>();
         private MaterialPropertyBlock propertyBlock;
         private bool subscribed;
+        private Color lastEmissionColor;
+        private bool hasEmissionColor;
 
         public TimeOfDayController TimeOfDay => timeOfDay;
         public Light DirectionalLight => directionalLight;
@@ -279,6 +281,8 @@ namespace WinterMarket
 
                 localLight.color = color;
                 localLight.intensity = localLightBaseIntensities[i] * intensityMultiplier;
+                // A near-zero point light still has a per-pixel cost on mobile GPUs.
+                localLight.enabled = intensityMultiplier > 0.08f;
             }
         }
 
@@ -287,6 +291,15 @@ namespace WinterMarket
             if (propertyBlock == null)
             {
                 propertyBlock = new MaterialPropertyBlock();
+            }
+
+            if (hasEmissionColor &&
+                Mathf.Abs(emissionColor.r - lastEmissionColor.r) < 0.002f &&
+                Mathf.Abs(emissionColor.g - lastEmissionColor.g) < 0.002f &&
+                Mathf.Abs(emissionColor.b - lastEmissionColor.b) < 0.002f &&
+                Mathf.Abs(emissionColor.a - lastEmissionColor.a) < 0.002f)
+            {
+                return;
             }
 
             for (int i = 0; i < warmRenderers.Length; i++)
@@ -302,6 +315,9 @@ namespace WinterMarket
                 targetRenderer.SetPropertyBlock(propertyBlock);
                 propertyBlock.Clear();
             }
+
+            lastEmissionColor = emissionColor;
+            hasEmissionColor = true;
         }
 
         private void CacheLocalLightIntensities()
@@ -312,6 +328,7 @@ namespace WinterMarket
             }
 
             localLightBaseIntensities = new float[localWarmLights.Length];
+            hasEmissionColor = false;
             for (int i = 0; i < localWarmLights.Length; i++)
             {
                 localLightBaseIntensities[i] =

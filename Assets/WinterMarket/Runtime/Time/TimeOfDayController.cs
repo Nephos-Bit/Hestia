@@ -30,6 +30,7 @@ namespace WinterMarket
         [Header("Clock")]
         [SerializeField, Min(0f)] private float smoothingTime = 0.2f;
         [SerializeField] private bool useUnscaledTime = true;
+        [SerializeField, Min(0.05f)] private float visualUpdateInterval = 0.25f;
 
         private float hour;
         private float angularVelocity;
@@ -37,6 +38,7 @@ namespace WinterMarket
         private float debugHour;
         private TimeOfDayPhase currentPhase;
         private bool initialized;
+        private float nextVisualUpdateAt;
 
         public event Action<float> TimeChanged;
         public event Action<TimeOfDayPhase> PhaseChanged;
@@ -57,6 +59,7 @@ namespace WinterMarket
 
             hour = GetTargetHour();
             currentPhase = GetPhase(hour);
+            nextVisualUpdateAt = Time.unscaledTime;
             initialized = true;
         }
 
@@ -165,9 +168,15 @@ namespace WinterMarket
 
         private void PublishChanges(float previousHour, bool forceTimeEvent = false)
         {
-            if (forceTimeEvent || !Mathf.Approximately(previousHour, hour))
+            // Local time advances continuously, but applying the complete render look every
+            // frame only rewrites light and material state. Four updates per second are
+            // visually continuous for a real-world clock while explicit debug changes stay
+            // immediate.
+            bool timeChanged = !Mathf.Approximately(previousHour, hour);
+            if (forceTimeEvent || (timeChanged && Time.unscaledTime >= nextVisualUpdateAt))
             {
                 TimeChanged?.Invoke(hour);
+                nextVisualUpdateAt = Time.unscaledTime + Mathf.Max(0.05f, visualUpdateInterval);
             }
 
             TimeOfDayPhase newPhase = GetPhase(hour);
@@ -220,6 +229,7 @@ namespace WinterMarket
             closingStartsAt = Mathf.Clamp(closingStartsAt, eveningStartsAt, 24f);
             nightStartsAt = Mathf.Clamp(nightStartsAt, closingStartsAt, 24f);
             smoothingTime = Mathf.Max(0f, smoothingTime);
+            visualUpdateInterval = Mathf.Max(0.05f, visualUpdateInterval);
         }
     }
 }

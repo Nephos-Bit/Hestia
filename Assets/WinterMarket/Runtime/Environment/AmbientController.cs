@@ -14,6 +14,9 @@ namespace WinterMarket
 
         private AudioClip[] footsteps;
         private Camera dioramaCamera;
+        private Vector3 lastCoverageCenter;
+        private float lastCoverageSize = -1f;
+        private bool hasCoverage;
 
         public void BuildRuntimeAtmosphere(Material snowMaterial, Camera camera = null)
         {
@@ -139,6 +142,13 @@ namespace WinterMarket
 
             Vector3 center = centerRay.GetPoint(distance);
             float coverage = Mathf.Max(44f, dioramaCamera.orthographicSize * 4.25f);
+            if (hasCoverage &&
+                (center - lastCoverageCenter).sqrMagnitude < 0.04f &&
+                Mathf.Abs(coverage - lastCoverageSize) < 0.02f)
+            {
+                return;
+            }
+
             for (int i = 0; i < snowLayers.Length; i++)
             {
                 ParticleSystem layer = snowLayers[i];
@@ -148,6 +158,10 @@ namespace WinterMarket
                 ParticleSystem.ShapeModule shape = layer.shape;
                 shape.scale = new Vector3(coverage, 12f, coverage);
             }
+
+            lastCoverageCenter = center;
+            lastCoverageSize = coverage;
+            hasCoverage = true;
         }
 
         private void BuildAudio()

@@ -114,19 +114,18 @@ namespace WinterMarket.Editor
 
                 var ambientOcclusion = ScriptableObject.CreateInstance<ScreenSpaceAmbientOcclusion>();
                 ambientOcclusion.name = "Subtle Mobile SSAO";
-                ambientOcclusion.SetActive(true);
+                ambientOcclusion.SetActive(false);
                 rendererData.rendererFeatures.Add(ambientOcclusion);
                 AssetDatabase.AddObjectToAsset(ambientOcclusion, rendererData);
                 EditorUtility.SetDirty(rendererData);
             }
 
-            // Existing V0.1 projects already have the feature asset. Re-enable it here as
-            // well so Prepare Project consistently restores subtle contact shading.
+            // Standard is the mobile default. High quality enables the feature at runtime.
             for (int i = 0; i < rendererData.rendererFeatures.Count; i++)
             {
                 if (rendererData.rendererFeatures[i] is ScreenSpaceAmbientOcclusion ambientOcclusion)
                 {
-                    ambientOcclusion.SetActive(true);
+                    ambientOcclusion.SetActive(false);
                     EditorUtility.SetDirty(ambientOcclusion);
                 }
             }
@@ -140,14 +139,18 @@ namespace WinterMarket.Editor
                 AssetDatabase.CreateAsset(pipeline, PipelinePath);
             }
 
-            pipeline.supportsHDR = true;
-            pipeline.supportsCameraDepthTexture = true;
+            pipeline.supportsHDR = false;
+            pipeline.supportsCameraDepthTexture = false;
             pipeline.supportsCameraOpaqueTexture = false;
-            pipeline.msaaSampleCount = 2;
-            pipeline.renderScale = 0.9f;
-            pipeline.shadowDistance = 36f;
-            pipeline.mainLightShadowmapResolution = 1024;
-            pipeline.shadowCascadeCount = 2;
+            pipeline.msaaSampleCount = 1;
+            pipeline.renderScale = 0.75f;
+            pipeline.upscalingFilter = UpscalingFilterSelection.FSR;
+            pipeline.fsrOverrideSharpness = true;
+            pipeline.fsrSharpness = 0.55f;
+            pipeline.shadowDistance = 22f;
+            pipeline.mainLightShadowmapResolution = 512;
+            pipeline.shadowCascadeCount = 1;
+            pipeline.maxAdditionalLightsCount = 2;
             GraphicsSettings.defaultRenderPipeline = pipeline;
             QualitySettings.renderPipeline = pipeline;
             EditorUtility.SetDirty(pipeline);

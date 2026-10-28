@@ -17,12 +17,25 @@ namespace WinterMarket
         internal const float BuildMaxZ = 72f;
         private const int RoadHalfWidthCells = 1;
         private const int PathSnapRangeCells = 4;
+        private static readonly Vector2Int[] CardinalDirections =
+        {
+            Vector2Int.right,
+            Vector2Int.up,
+            Vector2Int.left,
+            Vector2Int.down
+        };
 
         private readonly Dictionary<string, MarketBuildObject> instances = new Dictionary<string, MarketBuildObject>();
         private readonly List<BuildLayoutAction> undo = new List<BuildLayoutAction>(HistoryLimit);
         private readonly List<BuildLayoutAction> redo = new List<BuildLayoutAction>(HistoryLimit);
         private readonly HashSet<Vector2Int> occupied = new HashSet<Vector2Int>();
         private readonly HashSet<Vector2Int> pathCells = new HashSet<Vector2Int>();
+        private readonly HashSet<Vector2Int> roadBlockedScratch = new HashSet<Vector2Int>();
+        private readonly HashSet<Vector2Int> roadVisitedScratch = new HashSet<Vector2Int>();
+        private readonly Dictionary<Vector2Int, Vector2Int> roadPreviousScratch = new Dictionary<Vector2Int, Vector2Int>();
+        private readonly Queue<Vector2Int> roadQueueScratch = new Queue<Vector2Int>();
+        private readonly List<Vector2Int> roadRouteScratch = new List<Vector2Int>(128);
+        private readonly HashSet<Vector2Int> roadFootprintScratch = new HashSet<Vector2Int>();
 
         private SceneController scene;
         private PathSystem paths;
@@ -33,8 +46,8 @@ namespace WinterMarket
         private BuildGridOverlay gridOverlay;
         private RoadPreviewOverlay roadPreview;
         private StructureSafetyOverlay safetyOverlay;
-        private DynamicDeepSnowController deepSnow;
-        private DynamicForestController forest;
+        private ChunkedDeepSnowController deepSnow;
+        private ChunkedForestController forest;
         private bool configured;
         private bool buildMode;
         private bool buildButtonVisible;
@@ -76,8 +89,8 @@ namespace WinterMarket
             layoutRoot = new GameObject("Gestaltbarer Markt").transform;
             layoutRoot.SetParent(controller != null ? controller.WorldRoot : transform, false);
             safetyOverlay = StructureSafetyOverlay.Create(layoutRoot);
-            deepSnow = new DynamicDeepSnowController(layoutRoot, scene.Palette);
-            forest = new DynamicForestController(layoutRoot, scene.Palette, scene.SnowCapMaterial);
+            deepSnow = new ChunkedDeepSnowController(layoutRoot, scene.Palette);
+            forest = new ChunkedForestController(layoutRoot, scene.Palette);
             layout = BuildLayoutStore.LoadOrDefault();
             // Persist migrations and coordinate normalization before any object is rendered.
             BuildLayoutStore.Save(layout);
@@ -545,56 +558,151 @@ namespace WinterMarket
 
         private void RebuildLayout()
         {
-            foreach (KeyValuePair<string, MarketBuildObject> item in instances)
-            {
-                if (item.Value != null) Destroy(item.Value.gameObject);
-            }
-            instances.Clear();
-            occupied.Clear();
-            pathCells.Clear();
-
+            double rebuildStartedAt = Time.realtimeSinceStartupAsDouble;
+            var changes = new List<LayoutDelta>();
+            var desiredIds = new HashSet<string>();
             for (int i = 0; i < layout.objects.Count; i++)
             {
                 PlacedBuildObjectData data = layout.objects[i];
                 if (data == null || string.IsNullOrEmpty(data.id)) continue;
-                MarketBuildObject visual = BuildObjectVisual.Create(
-                    data,
-                    scene.Palette,
-                    layoutRoot,
-                    false,
-                    scene.SnowCapMaterial,
-                    BuildFenceJoins(data, data.id));
-                instances[data.id] = visual;
-                AddToOccupation(data);
+                desiredIds.Add(data.id);
+
+                if (instances.TryGetValue(data.id, out MarketBuildObject current) &&
+                    current != null && SamePlacement(current.Data, data))
+                {
+                    continue;
+                }
+
+                PlacedBuildObjectData before = current != null ? current.Data.Clone() : null;
+                if (current != null) Destroy(current.gameObject);
+                instances[data.id] = CreateVisual(data);
+                changes.Add(new LayoutDelta(before, data.Clone()));
             }
-            deepSnow?.Rebuild(layout);
-            forest?.Rebuild(layout);
+
+            var removedIds = new List<string>();
+            foreach (KeyValuePair<string, MarketBuildObject> item in instances)
+            {
+                if (desiredIds.Contains(item.Key)) continue;
+                if (item.Value != null)
+                {
+                    changes.Add(new LayoutDelta(item.Value.Data.Clone(), null));
+                    Destroy(item.Value.gameObject);
+                }
+                removedIds.Add(item.Key);
+            }
+            for (int i = 0; i < removedIds.Count; i++) instances.Remove(removedIds[i]);
+
+            RefreshAffectedFences(changes);
+            RebuildOccupation();
+            deepSnow?.ApplyLayoutChanges(layout, changes);
+            forest?.ApplyLayoutChanges(layout, changes);
             RefreshLighting();
             RefreshNavigation();
+            FrameDiagnostics.RecordBuildAction(
+                (float)((Time.realtimeSinceStartupAsDouble - rebuildStartedAt) * 1000.0));
+        }
+
+        private MarketBuildObject CreateVisual(PlacedBuildObjectData data)
+        {
+            return BuildObjectVisual.Create(
+                data,
+                scene.Palette,
+                layoutRoot,
+                false,
+                scene.SnowCapMaterial,
+                BuildFenceJoins(data, data.id));
+        }
+
+        private void RebuildOccupation()
+        {
+            occupied.Clear();
+            pathCells.Clear();
+            for (int i = 0; i < layout.objects.Count; i++)
+            {
+                if (layout.objects[i] != null) AddToOccupation(layout.objects[i]);
+            }
+        }
+
+        private void RefreshAffectedFences(IReadOnlyList<LayoutDelta> changes)
+        {
+            if (changes == null || changes.Count == 0) return;
+
+            for (int i = 0; i < layout.objects.Count; i++)
+            {
+                PlacedBuildObjectData fence = layout.objects[i];
+                if (fence == null || fence.type != BuildObjectType.Fence ||
+                    !IsFenceAffectedBy(fence, changes))
+                {
+                    continue;
+                }
+
+                if (instances.TryGetValue(fence.id, out MarketBuildObject previous) && previous != null)
+                {
+                    Destroy(previous.gameObject);
+                }
+                instances[fence.id] = CreateVisual(fence);
+            }
+        }
+
+        private bool IsFenceAffectedBy(PlacedBuildObjectData fence, IReadOnlyList<LayoutDelta> changes)
+        {
+            foreach (Vector2Int fenceCell in EnumerateCells(fence))
+            {
+                for (int changeIndex = 0; changeIndex < changes.Count; changeIndex++)
+                {
+                    if (TouchesFenceCell(changes[changeIndex].Before, fenceCell) ||
+                        TouchesFenceCell(changes[changeIndex].After, fenceCell))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private bool TouchesFenceCell(PlacedBuildObjectData data, Vector2Int fenceCell)
+        {
+            if (data == null) return false;
+            foreach (Vector2Int cell in EnumerateCells(data))
+            {
+                if (Mathf.Abs(cell.x - fenceCell.x) <= 1 && Mathf.Abs(cell.y - fenceCell.y) <= 1)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void RefreshLighting()
         {
-            var lights = new List<Light>(12);
+            int lightBudget = scene != null && scene.Quality != null
+                ? scene.Quality.CurrentWarmLightBudget
+                : 4;
+            var lights = new List<Light>(lightBudget);
             var renderers = new List<Renderer>(24);
-            int lightBudget = scene != null && scene.Quality != null && scene.Quality.CurrentQuality == QualityLevel.High
-                ? 12
-                : 6;
             foreach (MarketBuildObject item in instances.Values)
             {
                 for (int i = 0; i < item.WarmLights.Count; i++)
                 {
                     Light light = item.WarmLights[i];
-                    if (light != null) light.enabled = lights.Count < lightBudget;
-                    lights.Add(light);
+                    if (light == null) continue;
+                    if (lights.Count < lightBudget)
+                    {
+                        lights.Add(light);
+                    }
+                    else
+                    {
+                        light.enabled = false;
+                    }
                 }
                 for (int i = 0; i < item.WarmRenderers.Count; i++) renderers.Add(item.WarmRenderers[i]);
             }
             lighting?.SetDynamicWarmSources(lights.ToArray(), renderers.ToArray());
         }
 
-        private void OnQualityChanged(QualityLevel _)
+        private void OnQualityChanged(QualityLevel level)
         {
+            forest?.SetHighDetail(level == QualityLevel.High, layout);
             RefreshLighting();
         }
 
@@ -908,7 +1016,7 @@ namespace WinterMarket
             out List<Vector2Int> route,
             out string reason)
         {
-            var blocked = BuildRoadObstacles();
+            HashSet<Vector2Int> blocked = BuildRoadObstacles();
             if (!IsRoadCenterAvailable(start, blocked) || !IsRoadCenterAvailable(end, blocked))
             {
                 route = null;
@@ -916,27 +1024,26 @@ namespace WinterMarket
                 return false;
             }
 
-            var queue = new Queue<Vector2Int>();
-            var visited = new HashSet<Vector2Int> { start };
-            var previous = new Dictionary<Vector2Int, Vector2Int>();
-            queue.Enqueue(start);
-            Vector2Int[] directions = { Vector2Int.right, Vector2Int.up, Vector2Int.left, Vector2Int.down };
+            roadQueueScratch.Clear();
+            roadVisitedScratch.Clear();
+            roadPreviousScratch.Clear();
+            roadVisitedScratch.Add(start);
+            roadQueueScratch.Enqueue(start);
             bool found = false;
-            while (queue.Count > 0)
+            while (roadQueueScratch.Count > 0)
             {
-                Vector2Int current = queue.Dequeue();
+                Vector2Int current = roadQueueScratch.Dequeue();
                 if (current == end)
                 {
                     found = true;
                     break;
                 }
-                for (int index = 0; index < directions.Length; index++)
+                for (int index = 0; index < CardinalDirections.Length; index++)
                 {
-                    Vector2Int next = current + directions[index];
-                    if (visited.Contains(next) || !IsRoadCenterAvailable(next, blocked)) continue;
-                    visited.Add(next);
-                    previous[next] = current;
-                    queue.Enqueue(next);
+                    Vector2Int next = current + CardinalDirections[index];
+                    if (!roadVisitedScratch.Add(next) || !IsRoadCenterAvailable(next, blocked)) continue;
+                    roadPreviousScratch[next] = current;
+                    roadQueueScratch.Enqueue(next);
                 }
             }
 
@@ -947,33 +1054,34 @@ namespace WinterMarket
                 return false;
             }
 
-            route = new List<Vector2Int>();
-            for (Vector2Int cursor = end; ; cursor = previous[cursor])
+            roadRouteScratch.Clear();
+            for (Vector2Int cursor = end; ; cursor = roadPreviousScratch[cursor])
             {
-                route.Add(cursor);
+                roadRouteScratch.Add(cursor);
                 if (cursor == start) break;
             }
-            route.Reverse();
+            roadRouteScratch.Reverse();
+            route = roadRouteScratch;
             reason = null;
             return true;
         }
 
         private HashSet<Vector2Int> BuildRoadObstacles()
         {
-            var blocked = new HashSet<Vector2Int>();
+            roadBlockedScratch.Clear();
             foreach (PlacedBuildObjectData item in layout.objects)
             {
                 if (item == null || item.type == BuildObjectType.PathTile) continue;
                 // The route solver expands this set by the fixed road half-width. Generated
                 // forest is deliberately absent from layout and therefore never blocks roads.
-                foreach (Vector2Int cell in EnumerateCells(item)) blocked.Add(cell);
+                foreach (Vector2Int cell in EnumerateCells(item)) roadBlockedScratch.Add(cell);
             }
-            return blocked;
+            return roadBlockedScratch;
         }
 
-        private static HashSet<Vector2Int> BuildRoadFootprint(List<Vector2Int> route)
+        private HashSet<Vector2Int> BuildRoadFootprint(List<Vector2Int> route)
         {
-            var cells = new HashSet<Vector2Int>();
+            roadFootprintScratch.Clear();
             for (int index = 0; index < route.Count; index++)
             {
                 Vector2Int direction = index < route.Count - 1
@@ -982,12 +1090,12 @@ namespace WinterMarket
                 bool vertical = direction.x == 0;
                 for (int offset = -RoadHalfWidthCells; offset <= RoadHalfWidthCells; offset++)
                 {
-                    cells.Add(vertical
+                    roadFootprintScratch.Add(vertical
                         ? new Vector2Int(route[index].x + offset, route[index].y)
                         : new Vector2Int(route[index].x, route[index].y + offset));
                 }
             }
-            return cells;
+            return roadFootprintScratch;
         }
 
         private static bool IsRoadCenterAvailable(Vector2Int center, HashSet<Vector2Int> blocked)
@@ -1456,6 +1564,8 @@ namespace WinterMarket
         private void OnDestroy()
         {
             if (scene != null && scene.Quality != null) scene.Quality.QualityChanged -= OnQualityChanged;
+            deepSnow?.Clear();
+            forest?.Clear();
         }
 
         private sealed class BuildLayoutAction
@@ -1751,6 +1861,8 @@ namespace WinterMarket
     {
         private Mesh mesh;
         private Material material;
+        private Vector3[] vertices = Array.Empty<Vector3>();
+        private int[] triangles = Array.Empty<int>();
 
         public static RoadPreviewOverlay Create(Transform parent)
         {
@@ -1782,8 +1894,9 @@ namespace WinterMarket
                 Clear();
                 return;
             }
-            var vertices = new Vector3[cells.Count * 4];
-            var triangles = new int[cells.Count * 6];
+            int vertexCount = cells.Count * 4;
+            int triangleCount = cells.Count * 6;
+            EnsureCapacity(vertexCount, triangleCount);
             float half = BuildModeController.GridSize * 0.5f;
             for (int index = 0; index < cells.Count; index++)
             {
@@ -1804,8 +1917,8 @@ namespace WinterMarket
                 triangles[triangle + 5] = vertex + 2;
             }
             mesh.Clear();
-            mesh.vertices = vertices;
-            mesh.triangles = triangles;
+            mesh.SetVertices(vertices, 0, vertexCount);
+            mesh.SetTriangles(triangles, 0, triangleCount, 0, false);
             mesh.RecalculateBounds();
             SetColor(valid ? new Color(0.48f, 0.9f, 0.66f, 0.68f) : new Color(0.94f, 0.38f, 0.32f, 0.68f));
         }
@@ -1820,6 +1933,18 @@ namespace WinterMarket
             if (material == null) return;
             material.color = color;
             if (material.HasProperty("_BaseColor")) material.SetColor("_BaseColor", color);
+        }
+
+        private void EnsureCapacity(int vertexCount, int triangleCount)
+        {
+            if (vertices.Length < vertexCount)
+            {
+                vertices = new Vector3[Mathf.NextPowerOfTwo(vertexCount)];
+            }
+            if (triangles.Length < triangleCount)
+            {
+                triangles = new int[Mathf.NextPowerOfTwo(triangleCount)];
+            }
         }
 
         private void OnDestroy()

@@ -521,15 +521,28 @@ namespace WinterMarket
                 var ui = gameObject.AddComponent<DioramaUIController>();
                 ui.Configure(Quality);
             }
-            gameObject.AddComponent<FrameDiagnostics>();
+            if (Debug.isDebugBuild || FrameDiagnostics.IsPerformanceCaptureRequested)
+            {
+                gameObject.AddComponent<FrameDiagnostics>();
+            }
         }
 
         private void ApplyLightingQuality(QualityLevel level)
         {
             bool high = level == QualityLevel.High;
+            if (DioramaCamera != null)
+            {
+                DioramaCamera.allowHDR = high;
+                DioramaCamera.allowMSAA = high;
+            }
+
+            if (Lighting != null && Lighting.DirectionalLight != null)
+            {
+                Lighting.DirectionalLight.shadows = high ? LightShadows.Soft : LightShadows.Hard;
+            }
             for (int i = 0; i < warmLights.Count; i++)
             {
-                warmLights[i].enabled = high || i < 3;
+                warmLights[i].enabled = high || i < 4;
             }
         }
 
